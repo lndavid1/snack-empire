@@ -1647,7 +1647,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           assignedStationId: savedEmp ? (savedEmp.assignedStationId || e.assignedStationId) : e.assignedStationId,
           stamina: savedEmp && (savedEmp as any).stamina !== undefined ? (savedEmp as any).stamina : (e.stamina ?? 100),
           workState: 'IDLE' as const,
-          currentLocation: (savedEmp?.assignedStationId ? 'STATION' : (e.role === 'cook' ? 'STATION' : 'SERVICE_AREA')) as any
+          currentLocation: (savedEmp?.assignedStationId ? 'STATION' : ((e.role === 'cook' || e.role === 'chef') ? 'STATION' : 'SERVICE_AREA')) as any
         };
       }),
       upgrades: state.upgrades.map(u => ({
@@ -1669,11 +1669,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       equipment: saved.equipment && saved.equipment.length > 0
         ? saved.equipment
         : STARTER_EQUIPMENT.map(e => ({ ...e })),
-      stations: (saved.stations && saved.stations.length > 0 ? saved.stations : STARTER_STATIONS).map(s => ({
-        ...s,
-        queue: Array.isArray(s.queue) ? s.queue : [],
-        activeJobId: Array.isArray(s.queue) && s.queue.length > 0 ? s.queue[0] : undefined
-      })),
+      stations: (saved.stations && saved.stations.length > 0 ? saved.stations : STARTER_STATIONS).map(s => {
+        const isManuallyAssigned = s.assignedEmployeeId && (saved.hiredEmployees as any)?.[s.assignedEmployeeId]?.assignedStationId === s.id;
+        return {
+          ...s,
+          assignedEmployeeId: isManuallyAssigned ? s.assignedEmployeeId : undefined,
+          queue: Array.isArray(s.queue) ? s.queue : [],
+          activeJobId: Array.isArray(s.queue) && s.queue.length > 0 ? s.queue[0] : undefined
+        };
+      }),
       productionJobs: [],
       unlockedRecipeIds: Array.from(new Set([
         ...(saved.unlockedRecipeIds || []),
@@ -2051,18 +2055,26 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       let employeeSpeedMult = 1.0;
       let employeeQuality = 10;
-      let assignedEmpId = station.assignedEmployeeId || job.employeeId;
+      let assignedEmpId = job.employeeId;
+      if (!assignedEmpId && station.assignedEmployeeId) {
+        const manualEmp = updatedEmployees.find(e => e.id === station.assignedEmployeeId && e.hired && e.assignedStationId === station.id);
+        if (manualEmp && manualEmp.workState !== 'RESTING') {
+          assignedEmpId = manualEmp.id;
+          job.employeeId = manualEmp.id;
+        }
+      }
       if (!assignedEmpId) {
-        // Auto-assign any available hired cook/barista to work this station
+        // Auto-assign any available hired cook/chef/barista to work this station
         const availableWorker = updatedEmployees.find(e => 
           e.hired && 
+          (e.role === 'cook' || e.role === 'chef' || e.role === 'barista') && 
           EmployeeWorkflowService.canEmployeeWorkAtStation(e, station) && 
-          (e.workState === 'IDLE' || e.workState === 'SEEKING_JOB' || !e.workState)
+          (e.workState === 'IDLE' || e.workState === 'SEEKING_JOB' || !e.workState) &&
+          !e.currentProductionJobId
         );
         if (availableWorker) {
           assignedEmpId = availableWorker.id;
           job.employeeId = availableWorker.id;
-          station.assignedEmployeeId = availableWorker.id;
         }
       }
       if (assignedEmpId) {
@@ -2223,7 +2235,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         if (nextStamina >= 80) {
           emp.workState = 'IDLE';
-          emp.currentLocation = emp.role === 'cook' ? 'STATION' : 'SERVICE_AREA';
+          emp.currentLocation = (emp.role === 'cook' || emp.role === 'chef') ? 'STATION' : 'SERVICE_AREA';
           const newLog: EmployeeLogEvent = {
             id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
             timestamp: Date.now(),
@@ -2369,13 +2381,25 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
       }
 
-      // 3. Station Workers (Cooks, Baristas)
-      if ((emp.role === 'cook' || emp.role === 'barista') && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
+      // 3. Station Workers (Cooks, Chefs, Baristas)
+      if (
+        (emp.role === 'cook' || emp.role === 'chef' || emp.role === 'barista') && 
+        (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)
+      ) {
         const candidateStations = updatedStations.filter(s => 
           s.isOperational && EmployeeWorkflowService.canEmployeeWorkAtStation(emp, s)
         );
 
         for (const st of candidateStations) {
+          // Check if this station is already being actively worked on by ANOTHER employee
+          const isStationWorkedByOther = updatedEmployees.some(other => 
+            other.id !== emp.id && 
+            other.hired && 
+            other.workState === 'WORKING' && 
+            (other.assignedStationId === st.id || (st.activeJobId && other.currentProductionJobId === st.activeJobId))
+          );
+          if (isStationWorkedByOther) continue;
+
           if (st.queue.length > 0) {
             const queueJobs = st.queue
               .map((jId, idx) => {
@@ -2389,16 +2413,22 @@ export const useGameStore = create<GameState>((set, get) => ({
 
             if (queueJobs.length > 0) {
               queueJobs.sort((a, b) => b.priority - a.priority);
-              const highest = queueJobs[0];
 
-              if (!highest.job.employeeId || highest.job.employeeId === emp.id) {
-                st.activeJobId = highest.job.id;
-                highest.job.employeeId = emp.id;
+              // Find a job in this station's queue that is not being worked by someone else
+              const availableJobItem = queueJobs.find(item => 
+                !item.job.employeeId || 
+                item.job.employeeId === emp.id ||
+                !updatedEmployees.some(other => other.id !== emp.id && other.hired && other.workState === 'WORKING' && other.currentProductionJobId === item.job.id)
+              );
+
+              if (availableJobItem) {
+                st.activeJobId = availableJobItem.job.id;
+                availableJobItem.job.employeeId = emp.id;
                 emp.workState = 'WORKING';
                 emp.currentLocation = 'STATION';
-                emp.currentProductionJobId = highest.job.id;
+                emp.currentProductionJobId = availableJobItem.job.id;
 
-                const recipe = getRecipeById(highest.job.recipeId);
+                const recipe = getRecipeById(availableJobItem.job.recipeId);
                 const newLog: EmployeeLogEvent = {
                   id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                   timestamp: Date.now(),

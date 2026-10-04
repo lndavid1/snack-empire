@@ -136,8 +136,8 @@ export const EmployeeWorkflowService = {
     if (employee.assignedStationId && stationId) {
       return employee.assignedStationId === stationId;
     }
-    // Unassigned cooks can work at kitchen stations (prep, fryer, grill, oven, assembly, packing)
-    if (employee.role === 'cook') {
+    // Unassigned cooks and chefs can work at kitchen stations (prep, fryer, grill, oven, assembly, packing)
+    if (employee.role === 'cook' || employee.role === 'chef') {
       return ['prep', 'fryer', 'grill', 'oven', 'assembly', 'packing'].includes(stationType);
     }
     if (employee.role === 'barista') {
@@ -146,13 +146,19 @@ export const EmployeeWorkflowService = {
     return false;
   },
 
-  // 8. Check if employee is a service worker (cashier/server/shipper/manager)
+  // 8. Check if employee is a kitchen worker (cook/chef/barista)
+  isCook(employee: Employee): boolean {
+    if (!employee.hired) return false;
+    return employee.role === 'cook' || employee.role === 'chef';
+  },
+
+  // 9. Check if employee is a service worker (cashier/server/shipper/manager)
   isServiceWorker(employee: Employee): boolean {
     if (!employee.hired) return false;
     return ['cashier', 'server', 'shipper', 'manager'].includes(employee.role);
   },
 
-  // 9. Dedicated role checkers
+  // 10. Dedicated role checkers
   isServer(employee: Employee): boolean {
     if (!employee.hired) return false;
     return employee.role === 'server';

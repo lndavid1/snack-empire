@@ -434,4 +434,132 @@ describe('Phase 5: Store Integration & Simulation Tests', () => {
     // Cook in WORKING state
     expect(updatedCook.workState).toBe('WORKING');
   });
+
+  it('supports chef role in canEmployeeWorkAtStation and isCook', () => {
+    const chef: Employee = {
+      id: 'emp_chef_john',
+      name: 'John',
+      role: 'chef',
+      avatar: '👨‍🍳',
+      level: 1,
+      speed: 10,
+      quality: 10,
+      salaryPerSec: 1,
+      hired: true,
+      hireCost: 100,
+      upgradeCost: 50,
+      mood: 100,
+      catchphrase: 'Fire up!',
+      stamina: 100
+    };
+
+    expect(EmployeeWorkflowService.isCook(chef)).toBe(true);
+    expect(EmployeeWorkflowService.canEmployeeWorkAtStation(chef, 'prep')).toBe(true);
+    expect(EmployeeWorkflowService.canEmployeeWorkAtStation(chef, 'fryer')).toBe(true);
+    expect(EmployeeWorkflowService.canEmployeeWorkAtStation(chef, 'packing')).toBe(true);
+  });
+
+  it('enables multiple chefs to work simultaneously across different stations', () => {
+    const cook1: Employee = {
+      id: 'emp_cook_bob',
+      name: 'Bob',
+      role: 'cook',
+      avatar: '👨‍🍳',
+      level: 1,
+      speed: 10,
+      quality: 10,
+      salaryPerSec: 1,
+      hired: true,
+      hireCost: 100,
+      upgradeCost: 50,
+      mood: 100,
+      catchphrase: 'Cooking!',
+      stamina: 100,
+      workState: 'IDLE'
+    };
+
+    const chef2: Employee = {
+      id: 'emp_chef_john',
+      name: 'John',
+      role: 'chef',
+      avatar: '👨‍🍳',
+      level: 1,
+      speed: 10,
+      quality: 10,
+      salaryPerSec: 1,
+      hired: true,
+      hireCost: 100,
+      upgradeCost: 50,
+      mood: 100,
+      catchphrase: 'Masterchef!',
+      stamina: 100,
+      workState: 'IDLE'
+    };
+
+    const prepStation: ProductionStation = {
+      id: 'st_prep',
+      name: 'Bàn Sơ Chế',
+      stationType: 'prep',
+      equipmentId: 'eq_prep',
+      queue: ['job_prep_1'],
+      activeJobId: 'job_prep_1',
+      capacity: 2,
+      isOperational: true
+    };
+
+    const fryerStation: ProductionStation = {
+      id: 'st_fryer',
+      name: 'Bếp Chiên',
+      stationType: 'fryer',
+      equipmentId: 'eq_fryer',
+      queue: ['job_fryer_2'],
+      activeJobId: 'job_fryer_2',
+      capacity: 2,
+      isOperational: true
+    };
+
+    const job1: ProductionJob = {
+      id: 'job_prep_1',
+      orderId: 'c1',
+      recipeId: 'recipe_french_fries',
+      stationId: 'st_prep',
+      status: 'QUEUED',
+      currentStepIndex: 0,
+      progress: 0,
+      startedAt: Date.now()
+    };
+
+    const job2: ProductionJob = {
+      id: 'job_fryer_2',
+      orderId: 'c2',
+      recipeId: 'recipe_french_fries',
+      stationId: 'st_fryer',
+      status: 'QUEUED',
+      currentStepIndex: 1,
+      progress: 0,
+      startedAt: Date.now()
+    };
+
+    useGameStore.setState({
+      employees: [cook1, chef2],
+      stations: [prepStation, fryerStation],
+      productionJobs: [job1, job2],
+      customers: [],
+      employeeLogs: []
+    });
+
+    // Run employee workflow loop
+    useGameStore.getState().processEmployees(1);
+
+    const state = useGameStore.getState();
+    const updatedBob = state.employees.find(e => e.id === 'emp_cook_bob')!;
+    const updatedJohn = state.employees.find(e => e.id === 'emp_chef_john')!;
+
+    // BOTH workers should be WORKING concurrently at different stations!
+    expect(updatedBob.workState).toBe('WORKING');
+    expect(updatedJohn.workState).toBe('WORKING');
+    expect(updatedBob.currentProductionJobId).toBeDefined();
+    expect(updatedJohn.currentProductionJobId).toBeDefined();
+    expect(updatedBob.currentProductionJobId).not.toBe(updatedJohn.currentProductionJobId);
+  });
 });

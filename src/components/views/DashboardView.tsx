@@ -41,7 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpen3D }) => {
   const [isCooking, setIsCooking] = useState(false);
 
   const currentTier = STORE_TIERS.find(t => t.id === currentTierId) || STORE_TIERS[0];
-  const hasCook = employees.some((emp: Employee) => emp.role === 'cook' && emp.hired);
+  const hasCook = employees.some((emp: Employee) => (emp.role === 'cook' || emp.role === 'chef') && emp.hired);
   const hasCashier = employees.some((emp: Employee) => emp.role === 'cashier' && emp.hired);
   const isAutomated = hasCook && hasCashier;
   const readyJobs = productionJobs.filter(j => j.status === 'READY');

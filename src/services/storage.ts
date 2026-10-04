@@ -47,7 +47,14 @@ export const StorageService = {
       : STARTER_EQUIPMENT.map(e => ({ ...e }));
 
     const stations: ProductionStation[] = Array.isArray(raw.stations) && raw.stations.length > 0
-      ? raw.stations.map((s: any) => ({ ...s, queue: Array.isArray(s.queue) ? s.queue : [] }))
+      ? raw.stations.map((s: any) => {
+          const isManuallyAssigned = s.assignedEmployeeId && raw.hiredEmployees?.[s.assignedEmployeeId]?.assignedStationId === s.id;
+          return {
+            ...s,
+            assignedEmployeeId: isManuallyAssigned ? s.assignedEmployeeId : undefined,
+            queue: Array.isArray(s.queue) ? s.queue : []
+          };
+        })
       : STARTER_STATIONS.map(s => ({ ...s, queue: [] }));
 
     const defaultRecipes = ['recipe_french_fries', 'recipe_burger', 'recipe_soda'];
