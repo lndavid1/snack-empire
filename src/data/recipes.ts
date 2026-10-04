@@ -67,17 +67,17 @@ export const RECIPES_CATALOG: Recipe[] = [
     ]
   },
 
-  // 2. Cheeseburger - Data-driven recipe demonstrating unlock requirements and grill steps
+  // 2. Cheeseburger - Data-driven recipe cooked on kitchen stations
   {
     id: 'recipe_burger',
     name: 'Burger Bò Phô Mai',
     category: 'fastfood',
     icon: '🍔',
-    description: 'Bò nướng xèo xèo trên vỉ gang, kẹp phô mai cheddar tan chảy và bánh mì nóng giòn.',
+    description: 'Bò nướng xèo xèo trên chảo nóng, kẹp phô mai cheddar tan chảy và bánh mì nóng giòn.',
     foodItemId: 'food_burger',
     basePrice: 15,
     baseCost: 6.5,
-    basePreparationTime: 12,
+    basePreparationTime: 10,
     unlocked: true,
     ingredients: [
       { ingredientId: 'bread', quantity: 1, unit: 'cái' },
@@ -86,11 +86,10 @@ export const RECIPES_CATALOG: Recipe[] = [
     ],
     requiredEquipment: [
       { equipmentCategory: 'prep', minimumTier: 1 },
-      { equipmentCategory: 'grill', minimumTier: 1 },
+      { equipmentCategory: 'fryer', minimumTier: 1 },
       { equipmentCategory: 'packing', minimumTier: 1 }
     ],
     unlockRequirements: [
-      { type: 'equipment', value: 'grill_basic' },
       { type: 'level', value: 1 }
     ],
     steps: [
@@ -105,10 +104,10 @@ export const RECIPES_CATALOG: Recipe[] = [
         qualityImpact: 5
       },
       {
-        id: 'step_burger_grill',
-        name: 'Nướng thịt bò xèo xèo',
-        stationType: 'grill',
-        durationSeconds: 6,
+        id: 'step_burger_cook',
+        name: 'Áp chảo thịt bò xèo xèo',
+        stationType: 'fryer',
+        durationSeconds: 5,
         ingredientConsumption: [
           { ingredientId: 'beef', quantity: 1, unit: 'lát' }
         ],
@@ -122,6 +121,48 @@ export const RECIPES_CATALOG: Recipe[] = [
         ingredientConsumption: [
           { ingredientId: 'cheese', quantity: 1, unit: 'lát' }
         ],
+        qualityImpact: 5
+      }
+    ]
+  },
+
+  // 3. Soda Chanh Bạc Hà - Refreshing beverage recipe
+  {
+    id: 'recipe_soda',
+    name: 'Soda Chanh Bạc Hà',
+    category: 'drinks',
+    icon: '🥤',
+    description: 'Bật tung năng lượng sảng khoái mát lạnh với soda chanh bạc hà.',
+    foodItemId: 'food_soda',
+    basePrice: 5,
+    baseCost: 1.3,
+    basePreparationTime: 3,
+    unlocked: true,
+    ingredients: [
+      { ingredientId: 'sugar', quantity: 1, unit: 'gói' },
+      { ingredientId: 'ice', quantity: 1, unit: 'khay' }
+    ],
+    requiredEquipment: [
+      { equipmentCategory: 'prep', minimumTier: 1 },
+      { equipmentCategory: 'packing', minimumTier: 1 }
+    ],
+    steps: [
+      {
+        id: 'step_soda_prep',
+        name: 'Pha chế đá lạnh & syrup',
+        stationType: 'prep',
+        durationSeconds: 2,
+        ingredientConsumption: [
+          { ingredientId: 'sugar', quantity: 1, unit: 'gói' },
+          { ingredientId: 'ice', quantity: 1, unit: 'khay' }
+        ],
+        qualityImpact: 5
+      },
+      {
+        id: 'step_soda_pack',
+        name: 'Rót soda & đóng nắp ly',
+        stationType: 'packing',
+        durationSeconds: 1,
         qualityImpact: 5
       }
     ]

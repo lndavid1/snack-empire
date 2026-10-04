@@ -200,7 +200,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   ingredients: INITIAL_INGREDIENTS,
   suppliers: SUPPLIERS,
   selectedSupplierId: 'cheap_market',
-  autoRestock: false,
+  autoRestock: true,
 
   foods: INITIAL_FOODS,
   employees: INITIAL_EMPLOYEES,
@@ -247,7 +247,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   equipment: STARTER_EQUIPMENT.map(e => ({ ...e })),
   stations: STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
   productionJobs: [],
-  unlockedRecipeIds: ['recipe_french_fries'],
+  unlockedRecipeIds: ['recipe_french_fries', 'recipe_burger', 'recipe_soda'],
   employeeLogs: [],
 
   initGame: () => {
@@ -666,10 +666,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const customer = state.customers.find(c => c.id === customerId);
     if (!customer || customer.state !== 'waiting' || customer.isOrdered) return false;
 
-    // Enqueue bill into kitchen queue if recipe is unlocked
+    // Enqueue bill into kitchen queue
     const foodId = customer.orderedFoodId || customer.favoriteFoodId;
-    const matchingRecipe = getRecipeByFoodItemId(foodId || '');
-    if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
+    let matchingRecipe = getRecipeByFoodItemId(foodId || '');
+    if (!matchingRecipe || !state.unlockedRecipeIds.includes(matchingRecipe.id)) {
+      // Fallback to primary starter recipe so kitchen ALWAYS receives and cooks an order
+      matchingRecipe = getRecipeById('recipe_french_fries') || RECIPES_CATALOG[0];
+    }
+    if (matchingRecipe) {
       get().enqueueProductionJob(matchingRecipe.id, customer.id);
     }
 
@@ -1468,9 +1472,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       employees: state.employees.map(e => {
         const savedEmp = saved.hiredEmployees[e.id];
         if (savedEmp) {
+          const isStarterStaff = ['emp_cook_bob', 'emp_cashier_linh', 'emp_server_hoa'].includes(e.id);
+          const hasAnyHired = Object.values(saved.hiredEmployees).some(h => h.hired);
+          const isHired = hasAnyHired ? savedEmp.hired : (isStarterStaff ? true : savedEmp.hired);
           return {
             ...e,
-            hired: savedEmp.hired,
+            hired: isHired,
             level: savedEmp.level,
             mood: savedEmp.mood,
             assignedStationId: savedEmp.assignedStationId || e.assignedStationId,
@@ -1504,9 +1511,13 @@ export const useGameStore = create<GameState>((set, get) => ({
         ? saved.stations
         : STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
       productionJobs: [],
-      unlockedRecipeIds: saved.unlockedRecipeIds && saved.unlockedRecipeIds.length > 0
-        ? saved.unlockedRecipeIds
-        : ['recipe_french_fries'],
+      unlockedRecipeIds: Array.from(new Set([
+        ...(saved.unlockedRecipeIds || []),
+        'recipe_french_fries',
+        'recipe_burger',
+        'recipe_soda'
+      ])),
+      autoRestock: saved.autoRestock !== undefined ? saved.autoRestock : true,
       offlineReport,
       gameStarted: true,
       lastSavedTimestamp: now

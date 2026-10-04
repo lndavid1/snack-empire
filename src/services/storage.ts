@@ -29,6 +29,7 @@ export interface SaveData {
   equipment?: Equipment[];
   stations?: ProductionStation[];
   unlockedRecipeIds?: string[];
+  autoRestock?: boolean;
 }
 
 export const StorageService = {
@@ -46,9 +47,10 @@ export const StorageService = {
       ? raw.stations.map((s: any) => ({ ...s, queue: Array.isArray(s.queue) ? s.queue : [] }))
       : STARTER_STATIONS.map(s => ({ ...s, queue: [] }));
 
+    const defaultRecipes = ['recipe_french_fries', 'recipe_burger', 'recipe_soda'];
     const unlockedRecipeIds: string[] = Array.isArray(raw.unlockedRecipeIds) && raw.unlockedRecipeIds.length > 0
-      ? raw.unlockedRecipeIds
-      : ['recipe_french_fries'];
+      ? Array.from(new Set([...raw.unlockedRecipeIds, ...defaultRecipes]))
+      : defaultRecipes;
 
     const migrated: SaveData = {
       ...raw,
@@ -74,7 +76,8 @@ export const StorageService = {
       unlockedAchievements: Array.isArray(raw.unlockedAchievements) ? raw.unlockedAchievements : [],
       equipment,
       stations,
-      unlockedRecipeIds
+      unlockedRecipeIds,
+      autoRestock: raw.autoRestock !== undefined ? raw.autoRestock : true
     };
 
     return migrated;
