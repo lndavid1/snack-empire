@@ -20,7 +20,8 @@ import {
   ProductionJob,
   Order,
   CustomerMood,
-  EmployeeLogEvent
+  EmployeeLogEvent,
+  StaffSlot
 } from '../types/game';
 import {
   STORE_TIERS,
@@ -37,6 +38,8 @@ import {
 } from '../data/initialData';
 import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
 import { RECIPES_CATALOG, getRecipeById, getRecipeByFoodItemId } from '../data/recipes';
+import { getDefaultStaffSlots, CANDIDATE_POOL } from '../data/staffSlots';
+import { StaffSlotService } from '../services/staffSlotService';
 import { SatisfactionService } from '../services/satisfaction';
 import { EmployeeWorkflowService } from '../services/employeeWorkflow';
 import { sound } from '../services/sound';
@@ -177,6 +180,11 @@ export interface GameState {
   employeeLogs: EmployeeLogEvent[];
   processEmployees: (deltaSeconds?: number) => void;
   addEmployeeLog: (employeeId: string, message: string, type: 'work' | 'serve' | 'rest' | 'mistake') => void;
+  // Phase 7 Staff Slot State & Actions
+  staffSlots: StaffSlot[];
+  hireEmployeeIntoSlot: (slotId: string, employeeId: string) => boolean;
+  fireEmployee: (employeeId: string) => boolean;
+  checkStaffSlotUnlocks: () => StaffSlot[];
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -203,7 +211,11 @@ export const useGameStore = create<GameState>((set, get) => ({
   autoRestock: true,
 
   foods: INITIAL_FOODS,
-  employees: INITIAL_EMPLOYEES,
+  employees: [
+    ...INITIAL_EMPLOYEES,
+    ...CANDIDATE_POOL.filter(c => !INITIAL_EMPLOYEES.some(e => e.id === c.id))
+  ],
+  staffSlots: getDefaultStaffSlots(),
   customers: [],
   orders: [],
 
@@ -987,6 +999,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         get().takeCustomerOrder(pendingCustomer.id);
       }
     }
+
+    // 7. Check for newly unlocked Staff Slots
+    get().checkStaffSlotUnlocks();
   },
 
   buyIngredient: (id: string, amount: number) => {
@@ -1092,21 +1107,36 @@ export const useGameStore = create<GameState>((set, get) => ({
     const emp = state.employees.find(e => e.id === id);
     if (!emp || emp.hired) return false;
 
+    // Phase 7: Verify staff slot capacity for this employee's role
+    const emptySlot = state.staffSlots.find(s => 
+      s.status === 'EMPTY' && 
+      StaffSlotService.normalizeRole(s.role) === StaffSlotService.normalizeRole(emp.role)
+    );
+    if (!emptySlot) {
+      sound.playError();
+      state.addFloatingText(`🚨 Không còn Staff Slot trống cho ${emp.role}!`, getSafeCenterX(), getSafeCenterY() - 40, 'text-rose-400 font-bold');
+      return false;
+    }
+
     if (state.money < emp.hireCost) {
       sound.playError();
       return false;
     }
 
     sound.playLevelUp();
-    state.addFloatingText(`Tuyển thành công ${emp.name}! 🎉`, window.innerWidth / 2, window.innerHeight / 2 - 50, 'text-cyan-400 font-bold');
+    state.addFloatingText(`Tuyển thành công ${emp.name}! 🎉`, getSafeCenterX(), getSafeCenterY() - 50, 'text-cyan-400 font-bold');
 
     const updatedQuests = state.quests.map(q => {
       if (q.id === 'q_hire_staff') return { ...q, progress: 1, completed: true };
       return q;
     });
 
+    const updatedSlots = state.staffSlots.map(s => 
+      s.id === emptySlot.id ? { ...s, status: 'OCCUPIED' as const, employeeId: emp.id } : s
+    );
+
     // Check automated achievement
-    const willHaveCook = emp.role === 'cook' || state.employees.some(e => e.role === 'cook' && e.hired);
+    const willHaveCook = emp.role === 'cook' || emp.role === 'chef' || state.employees.some(e => (e.role === 'cook' || e.role === 'chef') && e.hired);
     const willHaveCashier = emp.role === 'cashier' || state.employees.some(e => e.role === 'cashier' && e.hired);
     const updatedAchievements = state.achievements.map(ach => {
       if (ach.id === 'ach_automated' && willHaveCook && willHaveCashier && !ach.unlocked) {
@@ -1117,13 +1147,146 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     set(s => ({
       money: s.money - emp.hireCost,
-      employees: s.employees.map(e => e.id === id ? { ...e, hired: true } : e),
+      employees: s.employees.map(e => e.id === id ? { ...e, hired: true, workState: 'IDLE' as const } : e),
+      staffSlots: updatedSlots,
       quests: updatedQuests,
       achievements: updatedAchievements,
       brandValue: s.brandValue + 30
     }));
 
     return true;
+  },
+
+  hireEmployeeIntoSlot: (slotId: string, employeeId: string) => {
+    const state = get();
+    const slot = state.staffSlots.find(s => s.id === slotId);
+    const emp = state.employees.find(e => e.id === employeeId);
+    if (!slot || !emp) return false;
+
+    const validation = StaffSlotService.canHireForSlot(slot, emp);
+    if (!validation.canHire) {
+      sound.playError();
+      state.addFloatingText(`🚨 ${validation.reason || 'Không thể tuyển dụng!'}`, getSafeCenterX(), getSafeCenterY() - 40, 'text-rose-400 font-bold');
+      return false;
+    }
+
+    if (state.money < emp.hireCost) {
+      sound.playError();
+      state.addFloatingText('💸 Không đủ tiền tuyển nhân viên!', getSafeCenterX(), getSafeCenterY() - 40, 'text-rose-400 font-bold');
+      return false;
+    }
+
+    sound.playLevelUp();
+    state.addFloatingText(`🎉 Tuyển thành công ${emp.name} vào ${slot.role}!`, getSafeCenterX(), getSafeCenterY() - 50, 'text-cyan-400 font-bold');
+
+    const updatedQuests = state.quests.map(q => {
+      if (q.id === 'q_hire_staff') return { ...q, progress: 1, completed: true };
+      return q;
+    });
+
+    const updatedSlots = state.staffSlots.map(s => 
+      s.id === slotId ? { ...s, status: 'OCCUPIED' as const, employeeId: emp.id } : s
+    );
+
+    const willHaveCook = emp.role === 'cook' || emp.role === 'chef' || state.employees.some(e => (e.role === 'cook' || e.role === 'chef') && e.hired);
+    const willHaveCashier = emp.role === 'cashier' || state.employees.some(e => e.role === 'cashier' && e.hired);
+    const updatedAchievements = state.achievements.map(ach => {
+      if (ach.id === 'ach_automated' && willHaveCook && willHaveCashier && !ach.unlocked) {
+        return { ...ach, unlocked: true, unlockedAt: Date.now() };
+      }
+      return ach;
+    });
+
+    const newLog: EmployeeLogEvent = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: Date.now(),
+      employeeId: emp.id,
+      employeeName: emp.name,
+      message: `Đã tuyển dụng ${emp.name} vào vị trí ${slot.role}! 🎉`,
+      type: 'work'
+    };
+
+    set(s => ({
+      money: s.money - emp.hireCost,
+      employees: s.employees.map(e => e.id === employeeId ? { ...e, hired: true, workState: 'IDLE' as const } : e),
+      staffSlots: updatedSlots,
+      quests: updatedQuests,
+      achievements: updatedAchievements,
+      brandValue: s.brandValue + 30,
+      employeeLogs: [newLog, ...s.employeeLogs.slice(0, 19)]
+    }));
+
+    return true;
+  },
+
+  fireEmployee: (employeeId: string) => {
+    const state = get();
+    const emp = state.employees.find(e => e.id === employeeId);
+    if (!emp || !emp.hired) return false;
+
+    sound.playClick();
+    state.addFloatingText(`👋 Đã sa thải ${emp.name}! Vị trí trở về trạng thái trống.`, getSafeCenterX(), getSafeCenterY() - 40, 'text-amber-300 font-bold');
+
+    // Free associated slot to EMPTY
+    const updatedSlots = state.staffSlots.map(s => 
+      s.employeeId === employeeId ? { ...s, status: 'EMPTY' as const, employeeId: undefined } : s
+    );
+
+    // Free associated station assignment
+    const updatedStations = state.stations.map(st => 
+      st.assignedEmployeeId === employeeId ? { ...st, assignedEmployeeId: undefined } : st
+    );
+
+    // Update employee state to unhired
+    const updatedEmployees = state.employees.map(e => 
+      e.id === employeeId ? { ...e, hired: false, workState: 'IDLE' as const, assignedStationId: undefined, currentProductionJobId: undefined } : e
+    );
+
+    const newLog: EmployeeLogEvent = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: Date.now(),
+      employeeId: emp.id,
+      employeeName: emp.name,
+      message: `${emp.name} đã rời khỏi nhà hàng. Vị trí hiện đang trống.`,
+      type: 'rest'
+    };
+
+    set(s => ({
+      employees: updatedEmployees,
+      staffSlots: updatedSlots,
+      stations: updatedStations,
+      employeeLogs: [newLog, ...s.employeeLogs.slice(0, 19)]
+    }));
+
+    return true;
+  },
+
+  checkStaffSlotUnlocks: () => {
+    const state = get();
+    const { updatedSlots, newlyUnlocked } = StaffSlotService.evaluateSlotUnlocks(state.staffSlots, state);
+
+    if (newlyUnlocked.length > 0) {
+      sound.playLevelUp();
+      for (const slot of newlyUnlocked) {
+        state.addFloatingText(`🎉 MỞ KHÓA VỊ TRÍ ${slot.role.toUpperCase()} MỚI! 🏢`, getSafeCenterX(), getSafeCenterY() - 60, 'text-yellow-300 font-extrabold text-xl');
+      }
+
+      const newLogs: EmployeeLogEvent[] = newlyUnlocked.map(slot => ({
+        id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        timestamp: Date.now(),
+        employeeId: 'system_hr',
+        employeeName: 'Phòng Nhân Sự',
+        message: `🎉 Đã mở khóa vị trí ${slot.role.toUpperCase()} mới! Nhà hàng có thể tuyển thêm nhân sự.`,
+        type: 'work'
+      }));
+
+      set(s => ({
+        staffSlots: updatedSlots,
+        employeeLogs: [...newLogs, ...s.employeeLogs.slice(0, 19)]
+      }));
+    }
+
+    return newlyUnlocked;
   },
 
   upgradeEmployee: (id: string) => {
@@ -1202,6 +1365,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       brandValue: s.brandValue + targetTier.tierNumber * 100,
       reputation: Math.min(100, s.reputation + 10)
     }));
+
+    get().checkStaffSlotUnlocks();
 
     return true;
   },
@@ -1397,7 +1562,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       unlockedAchievements: state.achievements.filter(a => a.unlocked).map(a => a.id),
       equipment: state.equipment,
       stations: state.stations,
-      unlockedRecipeIds: state.unlockedRecipeIds
+      unlockedRecipeIds: state.unlockedRecipeIds,
+      staffSlots: state.staffSlots
     };
 
     StorageService.save(data);
@@ -1516,6 +1682,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         'recipe_soda'
       ])),
       autoRestock: saved.autoRestock !== undefined ? saved.autoRestock : true,
+      staffSlots: saved.staffSlots && saved.staffSlots.length > 0 ? saved.staffSlots : getDefaultStaffSlots(),
       offlineReport,
       gameStarted: true,
       lastSavedTimestamp: now

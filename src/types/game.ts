@@ -81,8 +81,10 @@ export interface FoodItem {
 
 export type EmployeeRole = 
   | 'cook'
+  | 'chef'
   | 'cashier'
   | 'server'
+  | 'cleaner'
   | 'barista'
   | 'shipper'
   | 'manager'
@@ -467,3 +469,50 @@ export interface FloatingText {
   y: number;
   color: string;
 }
+
+// ----------------------------------------------------
+// PHASE 7: EMPLOYEE CAPACITY & STAFF SLOT SYSTEM
+// ----------------------------------------------------
+
+export type StaffSlotStatus = 'LOCKED' | 'EMPTY' | 'OCCUPIED';
+
+export type StaffSlotRequirementType = 
+  | 'PLAYER_LEVEL'
+  | 'RESTAURANT_LEVEL'
+  | 'REVENUE'
+  | 'DAILY_ORDERS'
+  | 'TABLE_COUNT'
+  | 'KITCHEN_STATIONS'
+  | 'EQUIPMENT_COUNT'
+  | 'REPUTATION';
+
+export interface StaffSlotUnlockRequirement {
+  type: StaffSlotRequirementType;
+  value: number;
+  description?: string;
+}
+
+export interface StaffSlot {
+  id: string;
+  name?: string;
+  tier?: number;
+  businessId: string; // 'main_restaurant'
+  role: EmployeeRole;
+  status: StaffSlotStatus;
+  employeeId?: string;
+  unlockRequirements?: StaffSlotUnlockRequirement[];
+  unlockedAt?: number;
+}
+
+export interface StaffCapacity {
+  role: EmployeeRole;
+  totalSlots: number;
+  unlockedSlots: number;
+  occupiedSlots: number;
+  emptySlots: number;
+  lockedSlots: number;
+  utilizationRate: number; // 0 to 100 (%)
+  hasWorkstationDeficit: boolean;
+  deficitCount: number;
+}
+

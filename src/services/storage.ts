@@ -1,6 +1,7 @@
 // Save, Load, Export and Import Service with validation and migration
-import { Equipment, ProductionStation } from '../types/game';
+import { Equipment, ProductionStation, StaffSlot } from '../types/game';
 import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
+import { getDefaultStaffSlots } from '../data/staffSlots';
 
 const SAVE_KEY = 'snack_empire_save_v1';
 
@@ -30,6 +31,8 @@ export interface SaveData {
   stations?: ProductionStation[];
   unlockedRecipeIds?: string[];
   autoRestock?: boolean;
+  // Phase 7 additions
+  staffSlots?: StaffSlot[];
 }
 
 export const StorageService = {
@@ -51,6 +54,25 @@ export const StorageService = {
     const unlockedRecipeIds: string[] = Array.isArray(raw.unlockedRecipeIds) && raw.unlockedRecipeIds.length > 0
       ? Array.from(new Set([...raw.unlockedRecipeIds, ...defaultRecipes]))
       : defaultRecipes;
+
+    const defaultSlots = getDefaultStaffSlots();
+    const staffSlots: StaffSlot[] = Array.isArray(raw.staffSlots) && raw.staffSlots.length > 0
+      ? raw.staffSlots
+      : defaultSlots.map(slot => {
+          if (slot.id === 'slot_chef_01') {
+            const isHired = raw.hiredEmployees?.['emp_cook_bob'] ? raw.hiredEmployees['emp_cook_bob'].hired : true;
+            return { ...slot, status: isHired ? 'OCCUPIED' : 'EMPTY', employeeId: isHired ? 'emp_cook_bob' : undefined };
+          }
+          if (slot.id === 'slot_cashier_01') {
+            const isHired = raw.hiredEmployees?.['emp_cashier_linh'] ? raw.hiredEmployees['emp_cashier_linh'].hired : true;
+            return { ...slot, status: isHired ? 'OCCUPIED' : 'EMPTY', employeeId: isHired ? 'emp_cashier_linh' : undefined };
+          }
+          if (slot.id === 'slot_server_01') {
+            const isHired = raw.hiredEmployees?.['emp_server_hoa'] ? raw.hiredEmployees['emp_server_hoa'].hired : true;
+            return { ...slot, status: isHired ? 'OCCUPIED' : 'EMPTY', employeeId: isHired ? 'emp_server_hoa' : undefined };
+          }
+          return { ...slot };
+        });
 
     const migrated: SaveData = {
       ...raw,
@@ -77,7 +99,8 @@ export const StorageService = {
       equipment,
       stations,
       unlockedRecipeIds,
-      autoRestock: raw.autoRestock !== undefined ? raw.autoRestock : true
+      autoRestock: raw.autoRestock !== undefined ? raw.autoRestock : true,
+      staffSlots
     };
 
     return migrated;
