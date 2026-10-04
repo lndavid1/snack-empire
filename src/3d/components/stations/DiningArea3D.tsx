@@ -1,46 +1,99 @@
 import React from 'react';
-import { RESTAURANT_LAYOUT } from '../../config/restaurantLayout';
+import { DINING_TABLES_LAYOUT } from '../../config/restaurantLayout';
+import type { DiningTableLayout, DiningSeatLayout } from '../../types/sceneTypes';
 
-export const DiningArea3D: React.FC = () => {
+interface DiningArea3DProps {
+  onSelectTable?: (table: DiningTableLayout) => void;
+  onSelectSeat?: (seat: DiningSeatLayout) => void;
+}
+
+export const DiningArea3D: React.FC<DiningArea3DProps> = ({
+  onSelectTable,
+  onSelectSeat,
+}) => {
   return (
     <group>
-      {RESTAURANT_LAYOUT.customer.diningTables.map(table => {
+      {DINING_TABLES_LAYOUT.map(table => {
         const [tx, ty, tz] = table.position;
+
         return (
-          <group key={table.id} position={[tx, ty, tz]}>
-            {/* Table Top */}
-            <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
-              <cylinderGeometry args={[0.7, 0.7, 0.06, 16]} />
-              <meshStandardMaterial color="#475569" roughness={0.6} />
+          <group 
+            key={table.id} 
+            position={[tx, ty, tz]}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectTable?.(table);
+            }}
+          >
+            {/* Table Top (Warm solid walnut slab with beveled edges) */}
+            <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
+              <boxGeometry args={[1.5, 0.08, 1.2]} />
+              <meshStandardMaterial color="#44403c" roughness={0.4} metalness={0.05} />
             </mesh>
 
-            {/* Table Central Pillar Leg */}
-            <mesh position={[0, 0.35, 0]} castShadow>
-              <cylinderGeometry args={[0.06, 0.06, 0.7]} />
-              <meshStandardMaterial color="#1e293b" metalness={0.8} />
-            </mesh>
-
-            {/* Table Base Disc */}
-            <mesh position={[0, 0.02, 0]} receiveShadow>
-              <cylinderGeometry args={[0.35, 0.35, 0.04, 16]} />
-              <meshStandardMaterial color="#1e293b" metalness={0.8} />
-            </mesh>
-
-            {/* Surrounding Stools */}
-            {[-0.8, 0.8].map((sx, i) => (
-              <group key={i} position={[sx, 0, 0]}>
-                {/* Seat Cushion */}
-                <mesh position={[0, 0.45, 0]} castShadow>
-                  <cylinderGeometry args={[0.22, 0.22, 0.06, 16]} />
-                  <meshStandardMaterial color="#ea580c" roughness={0.7} />
-                </mesh>
-                {/* Leg */}
-                <mesh position={[0, 0.22, 0]} castShadow>
-                  <cylinderGeometry args={[0.03, 0.03, 0.44]} />
-                  <meshStandardMaterial color="#0f172a" metalness={0.8} />
-                </mesh>
-              </group>
+            {/* Table Frame & 4 Matte Black Metal Legs */}
+            {[[-0.65, -0.5], [0.65, -0.5], [-0.65, 0.5], [0.65, 0.5]].map(([lx, lz], i) => (
+              <mesh key={i} position={[lx, 0.35, lz]} castShadow>
+                <cylinderGeometry args={[0.035, 0.035, 0.7]} />
+                <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.3} />
+              </mesh>
             ))}
+
+            {/* Tabletop Center Condiment / Napkin Caddy */}
+            <group position={[0, 0.82, 0]}>
+              <mesh castShadow>
+                <boxGeometry args={[0.2, 0.1, 0.16]} />
+                <meshStandardMaterial color="#d97706" roughness={0.8} />
+              </mesh>
+              {/* Mini Salt & Pepper Shakers */}
+              <mesh position={[-0.05, 0.08, 0]} castShadow>
+                <cylinderGeometry args={[0.025, 0.025, 0.07]} />
+                <meshStandardMaterial color="#f8fafc" roughness={0.2} />
+              </mesh>
+              <mesh position={[0.05, 0.08, 0]} castShadow>
+                <cylinderGeometry args={[0.025, 0.025, 0.07]} />
+                <meshStandardMaterial color="#0f172a" roughness={0.2} />
+              </mesh>
+            </group>
+
+            {/* 4 Chairs per Table */}
+            {table.seats.map(seat => {
+              // Local offset relative to table position
+              const offsetX = seat.position[0] - tx;
+              const offsetZ = seat.position[2] - tz;
+
+              return (
+                <group
+                  key={seat.id}
+                  position={[offsetX, 0, offsetZ]}
+                  rotation={[0, seat.rotation, 0]}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectSeat?.(seat);
+                  }}
+                >
+                  {/* Chair Seat Cushion (Warm Mustard / Leather tone) */}
+                  <mesh position={[0, 0.44, 0]} castShadow receiveShadow>
+                    <boxGeometry args={[0.42, 0.06, 0.42]} />
+                    <meshStandardMaterial color="#f59e0b" roughness={0.6} />
+                  </mesh>
+
+                  {/* Chair Backrest */}
+                  <mesh position={[0, 0.72, -0.19]} castShadow>
+                    <boxGeometry args={[0.4, 0.38, 0.04]} />
+                    <meshStandardMaterial color="#d97706" roughness={0.5} />
+                  </mesh>
+
+                  {/* Chair 4 Legs */}
+                  {[[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].map(([clx, clz], ci) => (
+                    <mesh key={ci} position={[clx, 0.22, clz]} castShadow>
+                      <cylinderGeometry args={[0.02, 0.015, 0.44]} />
+                      <meshStandardMaterial color="#0f172a" metalness={0.8} />
+                    </mesh>
+                  ))}
+                </group>
+              );
+            })}
           </group>
         );
       })}

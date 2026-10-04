@@ -9,6 +9,7 @@ import { StationRenderer3D } from './stations/StationRenderer3D';
 import { Storage3D } from './stations/Storage3D';
 import { ServiceCounter3D } from './stations/ServiceCounter3D';
 import { DiningArea3D } from './stations/DiningArea3D';
+import { InteriorDecor3D } from './stations/InteriorDecor3D';
 import { Employee3D } from './characters/Employee3D';
 import { Customer3D } from './characters/Customer3D';
 
@@ -47,14 +48,19 @@ export const RestaurantScene: React.FC<RestaurantSceneProps> = ({
       {/* 6. Service Counter & Pickup Hatch */}
       <ServiceCounter3D 
         readyItems={sceneState.readyItems} 
-        onSelect={() => {
-          const firstSt = sceneState.stations[0];
-          if (firstSt) onInspect({ type: 'station', data: firstSt });
-        }}
+        onSelectCounterPoint={(point) => onInspect({ type: 'counter_point', data: point })}
       />
 
       {/* 7. Customer Dining Area */}
-      <DiningArea3D />
+      <DiningArea3D 
+        onSelectTable={(table) => onInspect({ type: 'table', data: table })}
+        onSelectSeat={(seat) => onInspect({ type: 'seat', data: seat })}
+      />
+
+      {/* 8. Interior Decor, Amenities & Staff Lounge */}
+      <InteriorDecor3D 
+        onSelectDecor={(decor) => onInspect({ type: 'decor', data: decor })}
+      />
 
       {/* 8. Staff Employees */}
       {sceneState.employees.map(emp => (

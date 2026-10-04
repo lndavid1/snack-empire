@@ -12,7 +12,7 @@ import {
 } from './bridge/gameStateSelectors';
 import { getRestaurant3DState } from './bridge/gameStateBridge';
 import type { InspectedObject } from './types/sceneTypes';
-import { CAMERA_CONFIG } from './config/cameraConfig';
+import { CAMERA_CONFIG, type CameraPresetId } from './config/cameraConfig';
 import { RestaurantScene } from './components/RestaurantScene';
 import { InspectionPanel } from './components/ui/InspectionPanel';
 import { WebGLFallback } from './components/ui/WebGLFallback';
@@ -23,7 +23,8 @@ import {
   Sparkles, 
   Users, 
   ChefHat, 
-  Clock 
+  Clock,
+  Camera
 } from 'lucide-react';
 
 interface Restaurant3DViewProps {
@@ -33,6 +34,7 @@ interface Restaurant3DViewProps {
 export const Restaurant3DView: React.FC<Restaurant3DViewProps> = ({ onBackTo2D }) => {
   const [inspected, setInspected] = useState<InspectedObject>(null);
   const [hasWebGLError, setHasWebGLError] = useState(false);
+  const [activePreset, setActivePreset] = useState<CameraPresetId>('DEFAULT');
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
 
   // Subscribe to granular store slices
@@ -68,10 +70,20 @@ export const Restaurant3DView: React.FC<Restaurant3DViewProps> = ({ onBackTo2D }
     });
   }, [stations, equipment, productionJobs, employees, customers, foods]);
 
-  const resetCamera = () => {
-    if (controlsRef.current) {
-      controlsRef.current.reset();
+  const applyCameraPreset = (presetId: CameraPresetId) => {
+    setActivePreset(presetId);
+    const preset = CAMERA_CONFIG.presets[presetId];
+    if (preset && controlsRef.current) {
+      const [px, py, pz] = preset.position;
+      const [tx, ty, tz] = preset.target;
+      controlsRef.current.object.position.set(px, py, pz);
+      controlsRef.current.target.set(tx, ty, tz);
+      controlsRef.current.update();
     }
+  };
+
+  const resetCamera = () => {
+    applyCameraPreset('DEFAULT');
   };
 
   const hiredCount = employees.filter(e => e.hired).length;
@@ -123,15 +135,36 @@ export const Restaurant3DView: React.FC<Restaurant3DViewProps> = ({ onBackTo2D }
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Camera Preset Switcher & Action Buttons */}
         <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Preset Buttons */}
+          <div className="hidden md:flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 backdrop-blur-md p-1 rounded-2xl shadow-lg">
+            <div className="flex items-center gap-1 px-2 py-0.5 text-slate-400 text-[10px] font-bold">
+              <Camera className="w-3 h-3 text-amber-400" />
+              <span>Góc Nhìn:</span>
+            </div>
+            {(['DEFAULT', 'KITCHEN', 'DINING', 'SERVICE'] as CameraPresetId[]).map((id) => (
+              <button
+                key={id}
+                onClick={() => applyCameraPreset(id)}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all ${
+                  activePreset === id
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                {id === 'DEFAULT' ? 'Toàn Cảnh' : id === 'KITCHEN' ? 'Bếp' : id === 'DINING' ? 'Bàn Ăn' : 'Quầy Thu Ngân'}
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={resetCamera}
             className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95"
             title="Đặt lại góc camera ban đầu"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Góc Nhìn Gốc</span>
+            <span className="hidden sm:inline">Đặt Lại</span>
           </button>
 
           {onBackTo2D && (

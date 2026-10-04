@@ -10,8 +10,10 @@ import {
   User, 
   ArrowUpCircle, 
   Smile, 
-  Frown, 
-  Heart 
+  UtensilsCrossed,
+  Coffee,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 
 interface InspectionPanelProps {
@@ -20,7 +22,7 @@ interface InspectionPanelProps {
 }
 
 export const InspectionPanel: React.FC<InspectionPanelProps> = ({ inspected, onClose }) => {
-  const { repairEquipment, upgradeEmployee, money } = useGameStore();
+  const { repairEquipment, upgradeEmployee } = useGameStore();
 
   if (!inspected) return null;
 
@@ -32,8 +34,22 @@ export const InspectionPanel: React.FC<InspectionPanelProps> = ({ inspected, onC
           {inspected.type === 'station' && <ChefHat className="w-5 h-5 text-amber-400" />}
           {inspected.type === 'employee' && <User className="w-5 h-5 text-sky-400" />}
           {inspected.type === 'customer' && <Smile className="w-5 h-5 text-emerald-400" />}
+          {inspected.type === 'table' && <UtensilsCrossed className="w-5 h-5 text-amber-400" />}
+          {inspected.type === 'seat' && <Coffee className="w-5 h-5 text-orange-400" />}
+          {inspected.type === 'counter_point' && <Sparkles className="w-5 h-5 text-yellow-400" />}
+          {inspected.type === 'decor' && <Sparkles className="w-5 h-5 text-emerald-400" />}
+          {inspected.type === 'queue' && <Clock className="w-5 h-5 text-cyan-400" />}
+          {inspected.type === 'zone' && <Layers className="w-5 h-5 text-indigo-400" />}
           <span className="font-extrabold text-sm text-slate-100">
-            {inspected.type === 'station' ? 'Thông Tin Thiết Bị' : inspected.type === 'employee' ? 'Hồ Sơ Nhân Viên' : 'Chi Tiết Khách Hàng'}
+            {inspected.type === 'station' ? 'Thông Tin Thiết Bị' : 
+             inspected.type === 'employee' ? 'Hồ Sơ Nhân Viên' : 
+             inspected.type === 'customer' ? 'Chi Tiết Khách Hàng' :
+             inspected.type === 'table' ? 'Bàn Ăn Nhà Hàng' :
+             inspected.type === 'seat' ? 'Chỗ Ngồi' :
+             inspected.type === 'counter_point' ? 'Điểm Dịch Vụ' :
+             inspected.type === 'queue' ? 'Vị Trí Hàng Đợi' :
+             inspected.type === 'zone' ? 'Khu Vực Không Gian' :
+             'Tiện Ích & Nội Thất'}
           </span>
         </div>
         <button
@@ -201,6 +217,153 @@ export const InspectionPanel: React.FC<InspectionPanelProps> = ({ inspected, onC
                   style={{ width: `${cust.patiencePercent}%` }}
                 />
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 4. Table Details */}
+      {inspected.type === 'table' && (() => {
+        const table = inspected.data;
+        return (
+          <div className="space-y-2.5 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-sm text-slate-100">{table.name}</span>
+              <span className="font-extrabold px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300">
+                {table.capacity} Ghế ngồi
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 space-y-1.5 border border-slate-700/60">
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Kiểu dáng:</span>
+                <span className="font-bold text-slate-200">{table.shape === 'rectangular' ? 'Chữ nhật 4 chỗ' : 'Bàn tròn'}</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Tọa độ 3D:</span>
+                <span className="font-mono text-slate-300">[{table.position.join(', ')}]</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Điểm nhân viên phục vụ:</span>
+                <span className="font-mono text-amber-300">[{table.servicePoint.join(', ')}]</span>
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-400 italic">
+              Bàn gỗ óc chó cao cấp bọc da nhân tạo êm ái, trang bị sẵn khay gia vị và tăm giấy.
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 5. Seat Details */}
+      {inspected.type === 'seat' && (() => {
+        const seat = inspected.data;
+        return (
+          <div className="space-y-2.5 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-sm text-slate-100">Ghế Số {seat.seatIndex}</span>
+              <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-sky-300 border border-slate-700">
+                {seat.id}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 space-y-1.5 border border-slate-700/60">
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Bàn liên kết:</span>
+                <span className="font-bold text-amber-300 uppercase">{seat.tableId}</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Góc quay ghế:</span>
+                <span className="font-mono text-slate-200">{seat.rotation.toFixed(2)} rad</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Tọa độ:</span>
+                <span className="font-mono text-slate-300">[{seat.position.join(', ')}]</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 6. Counter Point Details */}
+      {inspected.type === 'counter_point' && (() => {
+        const pt = inspected.data;
+        return (
+          <div className="space-y-2.5 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-sm text-slate-100">{pt.name}</span>
+              <span className="font-extrabold px-2 py-0.5 rounded-full text-[10px] bg-sky-500/20 text-sky-300">
+                {pt.type}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 space-y-1.5 border border-slate-700/60 text-slate-300">
+              <p className="leading-relaxed">{pt.description}</p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 7. Decor / Amenity Details */}
+      {inspected.type === 'decor' && (() => {
+        const decor = inspected.data;
+        return (
+          <div className="space-y-2.5 text-xs">
+            <div className="font-black text-sm text-slate-100">{decor.name}</div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 space-y-1.5 border border-slate-700/60 text-slate-300">
+              <p className="leading-relaxed">{decor.description}</p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 8. Queue Slot Details */}
+      {inspected.type === 'queue' && (() => {
+        const q = inspected.data;
+        return (
+          <div className="space-y-2.5 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-sm text-slate-100">Slot Hàng Đợi #{q.index}</span>
+              <span className="font-extrabold px-2 py-0.5 rounded-full text-[10px] bg-cyan-500/20 text-cyan-300">
+                {q.queueType}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 space-y-1.5 border border-slate-700/60">
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Mã vị trí:</span>
+                <span className="font-mono text-cyan-300">{q.id}</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Tọa độ đứng chờ:</span>
+                <span className="font-mono text-slate-200">[{q.position.join(', ')}]</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 9. Zone Details */}
+      {inspected.type === 'zone' && (() => {
+        const zone = inspected.data;
+        return (
+          <div className="space-y-2.5 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-sm text-slate-100">{zone.name}</span>
+              <span className="font-extrabold px-2 py-0.5 rounded-full text-[10px] bg-indigo-500/20 text-indigo-300">
+                {zone.type}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 space-y-1.5 border border-slate-700/60">
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Kích thước:</span>
+                <span className="font-mono text-slate-200">{zone.size[0]}m x {zone.size[1]}m</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">Tọa độ trung tâm:</span>
+                <span className="font-mono text-slate-200">[{zone.position.join(', ')}]</span>
+              </div>
+              {zone.description && (
+                <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-700/40">
+                  {zone.description}
+                </div>
+              )}
             </div>
           </div>
         );

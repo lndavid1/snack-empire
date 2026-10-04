@@ -4,80 +4,145 @@ import type { ReadyItem3DState } from '../../types/sceneTypes';
 
 interface ServiceCounter3DProps {
   readyItems: ReadyItem3DState[];
-  onSelect?: () => void;
+  onSelectCounterPoint?: (point: { name: string; type: string; description: string }) => void;
 }
 
 export const ServiceCounter3D: React.FC<ServiceCounter3DProps> = ({ 
   readyItems, 
-  onSelect 
+  onSelectCounterPoint 
 }) => {
   const [x, y, z] = RESTAURANT_LAYOUT.serviceCounter.position;
 
   return (
-    <group 
-      position={[x, y, z]} 
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect?.();
-      }}
-    >
-      {/* Front Customer-facing Counter Body */}
+    <group position={[x, y, z]}>
+      {/* 1. Main Counter Base (Dark Slate Cabinet with Brass Kickplate) */}
       <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-        <boxGeometry args={[4.2, 1.0, 0.9]} />
+        <boxGeometry args={[4.8, 1.0, 0.95]} />
         <meshStandardMaterial color="#0f172a" roughness={0.7} />
       </mesh>
-
-      {/* Countertop Surface (Warm Maple / Solid Oak) */}
-      <mesh position={[0, 1.02, 0]} castShadow receiveShadow>
-        <boxGeometry args={[4.4, 0.08, 1.1]} />
-        <meshStandardMaterial color="#f59e0b" roughness={0.4} metalness={0.1} />
+      {/* Brass Kickplate */}
+      <mesh position={[0, 0.05, 0.48]}>
+        <boxGeometry args={[4.8, 0.1, 0.02]} />
+        <meshStandardMaterial color="#f59e0b" metalness={0.8} roughness={0.3} />
       </mesh>
 
-      {/* POS Cash Register Terminal */}
-      <group position={[1.2, 1.15, 0]}>
-        {/* Register Base */}
-        <mesh castShadow>
-          <boxGeometry args={[0.35, 0.12, 0.35]} />
-          <meshStandardMaterial color="#334155" roughness={0.3} metalness={0.8} />
+      {/* 2. Countertop Slab (Polished Maple Hardwood) */}
+      <mesh position={[0, 1.02, 0]} castShadow receiveShadow>
+        <boxGeometry args={[5.0, 0.08, 1.15]} />
+        <meshStandardMaterial color="#d97706" roughness={0.35} metalness={0.05} />
+      </mesh>
+
+      {/* ---------------------------------------------------- */}
+      {/* SECTION A: ORDER POINT (LEFT: X = -1.6)              */}
+      {/* ---------------------------------------------------- */}
+      <group 
+        position={[-1.6, 1.05, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectCounterPoint?.({
+            name: 'Điểm Đặt Món (Order Point)',
+            type: 'ORDER',
+            description: 'Nơi khách hàng xếp hàng chọn món ăn trong menu và gửi đơn vào bếp.',
+          });
+        }}
+      >
+        {/* POS Cash Register Terminal */}
+        <group position={[0, 0.1, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.38, 0.14, 0.38]} />
+            <meshStandardMaterial color="#1e293b" metalness={0.8} />
+          </mesh>
+          {/* Touchscreen Monitor */}
+          <mesh position={[0, 0.2, 0.06]} rotation={[-0.3, 0, 0]} castShadow>
+            <boxGeometry args={[0.34, 0.24, 0.04]} />
+            <meshStandardMaterial color="#0284c7" emissive="#0369a1" emissiveIntensity={0.5} />
+          </mesh>
+          {/* Order Sign Label */}
+          <mesh position={[0, 0.38, 0.06]}>
+            <boxGeometry args={[0.26, 0.06, 0.02]} />
+            <meshStandardMaterial color="#f59e0b" emissive="#b45309" emissiveIntensity={0.4} />
+          </mesh>
+        </group>
+      </group>
+
+      {/* ---------------------------------------------------- */}
+      {/* SECTION B: PAYMENT POINT (CENTER: X = 0)             */}
+      {/* ---------------------------------------------------- */}
+      <group 
+        position={[0, 1.05, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectCounterPoint?.({
+            name: 'Điểm Thanh Toán (Payment Point)',
+            type: 'PAYMENT',
+            description: 'Khu vực quẹt thẻ, quét mã QR và thu tiền mặt của khách.',
+          });
+        }}
+      >
+        {/* Card Reader / QR Scanner Terminal */}
+        <mesh position={[0, 0.08, 0.15]} rotation={[-0.4, 0, 0]} castShadow>
+          <boxGeometry args={[0.18, 0.12, 0.22]} />
+          <meshStandardMaterial color="#334155" metalness={0.6} />
         </mesh>
-        {/* Display Screen */}
-        <mesh position={[0, 0.18, 0.05]} rotation={[-0.3, 0, 0]} castShadow>
-          <boxGeometry args={[0.32, 0.22, 0.04]} />
-          <meshStandardMaterial color="#0284c7" emissive="#0369a1" emissiveIntensity={0.4} />
+        {/* Contactless NFC Glowing Chip */}
+        <mesh position={[0, 0.14, 0.15]} rotation={[-0.4, 0, 0]}>
+          <circleGeometry args={[0.04, 16]} />
+          <meshStandardMaterial color="#10b981" emissive="#059669" emissiveIntensity={0.8} />
         </mesh>
       </group>
 
-      {/* Serving Tray Area / Order Hatch */}
-      <mesh position={[-0.4, 1.07, 0]} castShadow>
-        <boxGeometry args={[0.7, 0.03, 0.5]} />
-        <meshStandardMaterial color="#cbd5e1" roughness={0.3} metalness={0.8} />
-      </mesh>
+      {/* ---------------------------------------------------- */}
+      {/* SECTION C: PICKUP POINT (RIGHT: X = 1.6)             */}
+      {/* ---------------------------------------------------- */}
+      <group 
+        position={[1.6, 1.05, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectCounterPoint?.({
+            name: 'Điểm Nhận Món (Pickup Point)',
+            type: 'PICKUP',
+            description: 'Khay inox bưng món ăn nóng hổi vừa nấu xong cho khách hàng.',
+          });
+        }}
+      >
+        {/* Stainless Steel Serving Tray Hatch */}
+        <mesh position={[0, 0.02, 0]} castShadow receiveShadow>
+          <boxGeometry args={[1.2, 0.03, 0.7]} />
+          <meshStandardMaterial color="#e2e8f0" roughness={0.2} metalness={0.9} />
+        </mesh>
 
-      {/* Service Counter Bell */}
-      <mesh position={[0.2, 1.1, 0.1]} castShadow>
-        <cylinderGeometry args={[0.08, 0.1, 0.08]} />
-        <meshStandardMaterial color="#fbbf24" roughness={0.2} metalness={0.9} />
-      </mesh>
+        {/* Counter Service Bell */}
+        <group position={[-0.45, 0.06, 0.2]}>
+          <mesh castShadow>
+            <cylinderGeometry args={[0.08, 0.1, 0.06]} />
+            <meshStandardMaterial color="#fbbf24" metalness={0.9} roughness={0.1} />
+          </mesh>
+          <mesh position={[0, 0.05, 0]}>
+            <sphereGeometry args={[0.02, 8, 8]} />
+            <meshStandardMaterial color="#d97706" metalness={0.9} />
+          </mesh>
+        </group>
 
-      {/* Ready Food Buffet Platter Items */}
-      {readyItems.map((item, idx) => {
-        const itemX = -1.6 + (idx % 3) * 0.45;
-        const itemZ = (Math.floor(idx / 3) * 0.25) - 0.1;
-        return (
-          <group key={item.id} position={[itemX, 1.1, itemZ]}>
-            {/* Food Box / Carton */}
-            <mesh castShadow>
-              <boxGeometry args={[0.26, 0.18, 0.2]} />
-              <meshStandardMaterial color="#ef4444" roughness={0.8} />
-            </mesh>
-            {/* Golden Fries sticking out */}
-            <mesh position={[0, 0.12, 0]} castShadow>
-              <cylinderGeometry args={[0.1, 0.1, 0.1]} />
-              <meshStandardMaterial color="#eab308" roughness={0.9} />
-            </mesh>
-          </group>
-        );
-      })}
+        {/* Ready Food Platters Display */}
+        {readyItems.map((item, idx) => {
+          const itemX = -0.2 + (idx % 2) * 0.35;
+          const itemZ = (Math.floor(idx / 2) * 0.25) - 0.15;
+          return (
+            <group key={item.id} position={[itemX, 0.08, itemZ]}>
+              {/* Food Box / Carton */}
+              <mesh castShadow>
+                <boxGeometry args={[0.26, 0.18, 0.2]} />
+                <meshStandardMaterial color="#ef4444" roughness={0.8} />
+              </mesh>
+              {/* Golden Fries sticking out */}
+              <mesh position={[0, 0.12, 0]} castShadow>
+                <cylinderGeometry args={[0.09, 0.09, 0.1]} />
+                <meshStandardMaterial color="#eab308" roughness={0.9} />
+              </mesh>
+            </group>
+          );
+        })}
+      </group>
     </group>
   );
 };
