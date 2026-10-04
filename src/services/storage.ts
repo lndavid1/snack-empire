@@ -1,4 +1,6 @@
-// Save, Load, Export and Import Service with validation
+// Save, Load, Export and Import Service with validation and migration
+import { Equipment, ProductionStation } from '../types/game';
+import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
 
 const SAVE_KEY = 'snack_empire_save_v1';
 
@@ -15,16 +17,67 @@ export interface SaveData {
   selectedSupplierId: string;
   ingredients: Record<string, number>;
   foodLevels: Record<string, { level: number; unlocked: boolean; sellingPrice?: number }>;
-  hiredEmployees: Record<string, { hired: boolean; level: number; mood: number }>;
+  hiredEmployees: Record<string, { hired: boolean; level: number; mood: number; assignedStationId?: string }>;
   upgrades: Record<string, number>;
   prestigeUpgrades: Record<string, number>;
   totalSalesCount: number;
   totalRevenueEarned: number;
   claimedQuests: string[];
   unlockedAchievements: string[];
+  // Phase 2 additions
+  equipment?: Equipment[];
+  stations?: ProductionStation[];
+  unlockedRecipeIds?: string[];
 }
 
 export const StorageService = {
+  migrate(raw: any): SaveData | null {
+    if (!raw || typeof raw !== 'object') return null;
+    if (typeof raw.money !== 'number' || typeof raw.xp !== 'number') return null;
+
+    // Idempotent migration from v1 to v2:
+    // If equipment or stations are missing, initialize them from starter defaults.
+    const equipment: Equipment[] = Array.isArray(raw.equipment) && raw.equipment.length > 0
+      ? raw.equipment
+      : STARTER_EQUIPMENT.map(e => ({ ...e }));
+
+    const stations: ProductionStation[] = Array.isArray(raw.stations) && raw.stations.length > 0
+      ? raw.stations.map((s: any) => ({ ...s, queue: Array.isArray(s.queue) ? s.queue : [] }))
+      : STARTER_STATIONS.map(s => ({ ...s, queue: [] }));
+
+    const unlockedRecipeIds: string[] = Array.isArray(raw.unlockedRecipeIds) && raw.unlockedRecipeIds.length > 0
+      ? raw.unlockedRecipeIds
+      : ['recipe_french_fries'];
+
+    const migrated: SaveData = {
+      ...raw,
+      version: 2,
+      lastSavedTimestamp: raw.lastSavedTimestamp || Date.now(),
+      money: raw.money,
+      xp: raw.xp,
+      level: raw.level || 1,
+      reputation: raw.reputation !== undefined ? raw.reputation : 50,
+      brandValue: raw.brandValue || 0,
+      empirePoints: raw.empirePoints || 0,
+      currentTierId: raw.currentTierId || 'tier_1_cart',
+      selectedSupplierId: raw.selectedSupplierId || 'cheap_market',
+      ingredients: raw.ingredients || {},
+      foodLevels: raw.foodLevels || {},
+      hiredEmployees: raw.hiredEmployees || {},
+      upgrades: raw.upgrades || {},
+      prestigeUpgrades: raw.prestigeUpgrades || {},
+      totalSalesCount: raw.totalSalesCount || 0,
+      totalRevenueEarned: raw.totalRevenueEarned || 0,
+      claimedQuests: Array.isArray(raw.claimedQuests) ? raw.claimedQuests : [],
+      unlockedAchievements: Array.isArray(raw.unlockedAchievements) ? raw.unlockedAchievements : [],
+      equipment,
+      stations,
+      unlockedRecipeIds
+    };
+
+    return migrated;
+  },
+
   save(data: SaveData): boolean {
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -40,9 +93,7 @@ export const StorageService = {
       const serialized = localStorage.getItem(SAVE_KEY);
       if (!serialized) return null;
       const parsed = JSON.parse(serialized);
-      if (typeof parsed !== 'object' || parsed === null) return null;
-      if (typeof parsed.money !== 'number') return null;
-      return parsed as SaveData;
+      return this.migrate(parsed);
     } catch (e) {
       console.error('Failed to load game state:', e);
       return null;
@@ -73,17 +124,7 @@ export const StorageService = {
   validateImport(jsonString: string): SaveData | null {
     try {
       const data = JSON.parse(jsonString);
-      if (
-        data &&
-        typeof data === 'object' &&
-        typeof data.money === 'number' &&
-        typeof data.xp === 'number' &&
-        data.ingredients &&
-        data.foodLevels
-      ) {
-        return data as SaveData;
-      }
-      return null;
+      return this.migrate(data);
     } catch {
       return null;
     }

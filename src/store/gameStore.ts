@@ -14,7 +14,10 @@ import {
   RandomEvent,
   FloatingText,
   Competitor,
-  StoreTierId
+  StoreTierId,
+  Equipment,
+  ProductionStation,
+  ProductionJob
 } from '../types/game';
 import {
   STORE_TIERS,
@@ -29,6 +32,7 @@ import {
   INITIAL_PRESTIGE_UPGRADES,
   POSSIBLE_EVENTS
 } from '../data/initialData';
+import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
 import { sound } from '../services/sound';
 import { StorageService, SaveData } from '../services/storage';
 
@@ -115,6 +119,12 @@ export interface GameState {
   soundEnabled: boolean;
   gameStarted: boolean;
 
+  // Production & Equipment (Phase 2 Foundation)
+  equipment: Equipment[];
+  stations: ProductionStation[];
+  productionJobs: ProductionJob[];
+  unlockedRecipeIds: string[];
+
   // Actions
   initGame: () => void;
   tickSimulation: () => void;
@@ -143,6 +153,9 @@ export interface GameState {
   resetGameData: () => void;
   importSaveData: (jsonStr: string) => boolean;
   exportSaveData: () => void;
+  // Phase 2 Station Actions
+  assignEmployeeToStation: (employeeId: string, stationId: string) => boolean;
+  unassignEmployeeFromStation: (stationId: string) => boolean;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -206,6 +219,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   offlineReport: null,
   soundEnabled: true,
   gameStarted: false,
+
+  // Production & Equipment Initial State
+  equipment: STARTER_EQUIPMENT.map(e => ({ ...e })),
+  stations: STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
+  productionJobs: [],
+  unlockedRecipeIds: ['recipe_french_fries'],
 
   initGame: () => {
     // Try to load existing save
@@ -906,7 +925,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   saveGame: () => {
     const state = get();
     const data: SaveData = {
-      version: 1,
+      version: 2,
       lastSavedTimestamp: Date.now(),
       money: state.money,
       xp: state.xp,
@@ -918,13 +937,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       selectedSupplierId: state.selectedSupplierId,
       ingredients: state.ingredients.reduce((acc, i) => ({ ...acc, [i.id]: i.stock }), {}),
       foodLevels: state.foods.reduce((acc, f) => ({ ...acc, [f.id]: { level: f.level, unlocked: f.isUnlocked, sellingPrice: f.sellingPrice } }), {}),
-      hiredEmployees: state.employees.reduce((acc, e) => ({ ...acc, [e.id]: { hired: e.hired, level: e.level, mood: e.mood } }), {}),
+      hiredEmployees: state.employees.reduce((acc, e) => ({ ...acc, [e.id]: { hired: e.hired, level: e.level, mood: e.mood, assignedStationId: e.assignedStationId } }), {}),
       upgrades: state.upgrades.reduce((acc, u) => ({ ...acc, [u.id]: u.level }), {}),
       prestigeUpgrades: state.prestigeUpgrades.reduce((acc, p) => ({ ...acc, [p.id]: p.level }), {}),
       totalSalesCount: state.totalSalesCount,
       totalRevenueEarned: state.totalRevenueEarned,
       claimedQuests: state.quests.filter(q => q.claimed).map(q => q.id),
-      unlockedAchievements: state.achievements.filter(a => a.unlocked).map(a => a.id)
+      unlockedAchievements: state.achievements.filter(a => a.unlocked).map(a => a.id),
+      equipment: state.equipment,
+      stations: state.stations,
+      unlockedRecipeIds: state.unlockedRecipeIds
     };
 
     StorageService.save(data);
@@ -1002,7 +1024,8 @@ export const useGameStore = create<GameState>((set, get) => ({
             ...e,
             hired: savedEmp.hired,
             level: savedEmp.level,
-            mood: savedEmp.mood
+            mood: savedEmp.mood,
+            assignedStationId: savedEmp.assignedStationId || e.assignedStationId
           };
         }
         return e;
@@ -1023,6 +1046,16 @@ export const useGameStore = create<GameState>((set, get) => ({
         ...a,
         unlocked: saved.unlockedAchievements?.includes(a.id) || false
       })),
+      equipment: saved.equipment && saved.equipment.length > 0
+        ? saved.equipment
+        : STARTER_EQUIPMENT.map(e => ({ ...e })),
+      stations: saved.stations && saved.stations.length > 0
+        ? saved.stations
+        : STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
+      productionJobs: [],
+      unlockedRecipeIds: saved.unlockedRecipeIds && saved.unlockedRecipeIds.length > 0
+        ? saved.unlockedRecipeIds
+        : ['recipe_french_fries'],
       offlineReport,
       gameStarted: true,
       lastSavedTimestamp: now
@@ -1050,5 +1083,51 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (saved) {
       StorageService.exportToFile(saved);
     }
+  },
+
+  assignEmployeeToStation: (employeeId: string, stationId: string) => {
+    const state = get();
+    const employee = state.employees.find(e => e.id === employeeId);
+    const station = state.stations.find(s => s.id === stationId);
+    if (!employee || !station) return false;
+
+    // Update stations: set new station's assigned employee, clear previous station if assigned
+    const updatedStations = state.stations.map(s => {
+      if (s.id === stationId) {
+        return { ...s, assignedEmployeeId: employeeId };
+      }
+      if (s.assignedEmployeeId === employeeId) {
+        return { ...s, assignedEmployeeId: undefined };
+      }
+      return s;
+    });
+
+    // Update employees: assign stationId to employee, clear any other employee at this station
+    const updatedEmployees = state.employees.map(e => {
+      if (e.id === employeeId) {
+        return { ...e, assignedStationId: stationId };
+      }
+      if (e.assignedStationId === stationId) {
+        return { ...e, assignedStationId: undefined };
+      }
+      return e;
+    });
+
+    set({ stations: updatedStations, employees: updatedEmployees });
+    return true;
+  },
+
+  unassignEmployeeFromStation: (stationId: string) => {
+    const state = get();
+    const station = state.stations.find(s => s.id === stationId);
+    if (!station || !station.assignedEmployeeId) return false;
+
+    const assignedEmpId = station.assignedEmployeeId;
+    const updatedStations = state.stations.map(s => (s.id === stationId ? { ...s, assignedEmployeeId: undefined } : s));
+    const updatedEmployees = state.employees.map(e => (e.id === assignedEmpId ? { ...e, assignedStationId: undefined } : e));
+
+    set({ stations: updatedStations, employees: updatedEmployees });
+    return true;
   }
 }));
+

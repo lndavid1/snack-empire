@@ -24,7 +24,9 @@ export type IngredientId =
   | 'flour'
   | 'oil'
   | 'potatoes'
-  | 'matcha';
+  | 'salt'
+  | 'matcha'
+  | (string & {});
 
 export interface Ingredient {
   id: IngredientId;
@@ -35,6 +37,13 @@ export interface Ingredient {
   stock: number;
   basePrice: number;
   minBatch: number;
+  // Phase 2 Simulation Depth Properties
+  purchasePrice?: number;
+  quality?: number;
+  freshness?: number;
+  expirationDays?: number;
+  storageRequirement?: 'ambient' | 'refrigerated' | 'frozen';
+  supplierId?: string;
 }
 
 export interface Supplier {
@@ -93,6 +102,131 @@ export interface Employee {
   upgradeCost: number;
   mood: number;         // percentage
   catchphrase: string;
+  // Phase 2 Station Assignment & Skills
+  assignedStationId?: string;
+  skills?: {
+    cooking: number;
+    preparation: number;
+    serving: number;
+    speed: number;
+    accuracy: number;
+  };
+  stamina?: number;
+}
+
+// ----------------------------------------------------
+// PHASE 2: EQUIPMENT, STATIONS, RECIPES & PRODUCTION
+// ----------------------------------------------------
+
+export type EquipmentCategory =
+  | 'prep'
+  | 'fryer'
+  | 'grill'
+  | 'oven'
+  | 'beverage'
+  | 'assembly'
+  | 'packing'
+  | 'storage'
+  | 'cleaning';
+
+export interface Equipment {
+  id: string;
+  name: string;
+  category: EquipmentCategory;
+  tier: number;
+  purchasePrice: number;
+  upgradeCost: number;
+  condition: number;       // 0 to 100 (%)
+  efficiency: number;      // 0 to 1.0 or multiplier
+  speedMultiplier: number;
+  qualityMultiplier: number;
+  capacity: number;
+  requiredPlayerLevel?: number;
+  unlocked: boolean;
+  description?: string;
+  icon?: string;
+}
+
+export interface ProductionStation {
+  id: string;
+  name: string;
+  stationType: EquipmentCategory;
+  equipmentId: string;
+  assignedEmployeeId?: string;
+  queue: string[];         // Array of ProductionJob IDs
+  capacity: number;
+  activeJobId?: string;
+  isOperational: boolean;
+}
+
+export interface RecipeIngredient {
+  ingredientId: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface RecipeEquipmentRequirement {
+  equipmentCategory: EquipmentCategory;
+  minimumTier?: number;
+  equipmentId?: string;
+}
+
+export interface RecipeStep {
+  id: string;
+  name: string;
+  stationType: EquipmentCategory;
+  durationSeconds: number;
+  requiredEquipment?: RecipeEquipmentRequirement[];
+  ingredientConsumption?: RecipeIngredient[];
+  qualityImpact?: number;
+}
+
+export interface RecipeUnlockRequirement {
+  type: 'level' | 'money' | 'equipment' | 'recipe' | 'research';
+  value: string | number;
+  amount?: number;
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  category: string;
+  ingredients: RecipeIngredient[];
+  steps: RecipeStep[];
+  requiredEquipment: RecipeEquipmentRequirement[];
+  basePrice: number;
+  baseCost: number;
+  basePreparationTime: number;
+  unlocked: boolean;
+  unlockRequirements?: RecipeUnlockRequirement[];
+  foodItemId?: string;     // Link to existing FoodItem for backward compatibility
+  icon?: string;
+  description?: string;
+}
+
+export type ProductionJobStatus =
+  | 'QUEUED'
+  | 'PREPARING'
+  | 'COOKING'
+  | 'ASSEMBLING'
+  | 'PACKING'
+  | 'READY'
+  | 'SERVED'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export interface ProductionJob {
+  id: string;
+  orderId?: string;
+  recipeId: string;
+  stationId: string;
+  employeeId?: string;
+  status: ProductionJobStatus;
+  currentStepIndex: number;
+  progress: number;         // 0 to 100
+  startedAt?: number;
+  completedAt?: number;
+  qualityScore?: number;    // 0 to 100
 }
 
 export interface StoreUpgrade {

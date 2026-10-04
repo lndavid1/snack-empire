@@ -150,6 +150,7 @@ export const INITIAL_INGREDIENTS: Ingredient[] = [
   { id: 'milk', name: 'Sữa Tươi Thanh Trùng', category: 'Drinks', icon: '🥛', unit: 'hộp', stock: 20, basePrice: 1.8, minBatch: 10 },
   { id: 'flour', name: 'Bột Mì Làm Bánh', category: 'Dessert', icon: '🌾', unit: 'túi', stock: 20, basePrice: 1.2, minBatch: 10 },
   { id: 'matcha', name: 'Bột Matcha Nhật', category: 'Special', icon: '🍵', unit: 'hũ', stock: 10, basePrice: 4.0, minBatch: 5 },
+  { id: 'salt', name: 'Muối & Gia Vị Lắc', category: 'Fastfood', icon: '🧂', unit: 'gói', stock: 50, basePrice: 0.5, minBatch: 20 },
 ];
 
 export const INITIAL_FOODS: FoodItem[] = [
