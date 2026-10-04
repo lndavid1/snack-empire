@@ -43,8 +43,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   ];
 
   return (
-    <nav className="w-full bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-800 flex lg:flex-col overflow-x-auto lg:overflow-y-auto no-scrollbar shrink-0 lg:w-64">
-      <div className="flex lg:flex-col p-2 gap-1.5 w-full">
+    <aside className="hidden lg:flex lg:flex-col bg-slate-900 border border-slate-800 shrink-0 lg:w-64 rounded-3xl p-2 h-fit sticky top-20 shadow-xl">
+      <div className="flex flex-col gap-1.5 w-full">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -72,6 +72,6 @@ export const Navigation: React.FC<NavigationProps> = ({
           );
         })}
       </div>
-    </nav>
+    </aside>
   );
 };

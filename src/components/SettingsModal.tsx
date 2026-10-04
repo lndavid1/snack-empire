@@ -48,7 +48,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
       const content = event.target?.result as string;
       const success = importSaveData(content);
       if (!success) {
-        setImportError('File save không hợp lệ hoặc bị lỗi định dạng!');
+        setImportError('File save không hợp lệ!');
       } else {
         setImportError(null);
         onClose();
@@ -64,38 +64,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+      <div className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-3xl p-4 md:p-6 shadow-2xl no-scrollbar">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white"
+          className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center select-none active:scale-95"
+          aria-label="Đóng cài đặt"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <h3 className="text-lg font-black text-slate-100 mb-1 flex items-center gap-2">
+        <h3 className="text-base md:text-lg font-black text-slate-100 mb-1 flex items-center gap-2">
           ⚙️ CÀI ĐẶT & HỆ THỐNG
         </h3>
-        <p className="text-xs text-slate-400 font-medium mb-5">
-          Quản lý âm thanh, lưu trữ dữ liệu đám mây / sao lưu máy tính.
+        <p className="text-[11px] md:text-xs text-slate-400 font-medium mb-4">
+          Quản lý âm thanh, sao lưu và dữ liệu trò chơi.
         </p>
 
-        <div className="space-y-3 mb-6">
+        <div className="space-y-2.5 mb-5">
           {/* Sound Toggle */}
-          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-800/60 border border-slate-700/60">
             <div className="flex items-center gap-2.5">
-              {soundEnabled ? <Volume2 className="w-5 h-5 text-amber-400" /> : <VolumeX className="w-5 h-5 text-slate-400" />}
+              {soundEnabled ? <Volume2 className="w-5 h-5 text-amber-400 shrink-0" /> : <VolumeX className="w-5 h-5 text-slate-400 shrink-0" />}
               <div>
-                <div className="text-sm font-bold text-slate-200">Hiệu Ứng Âm Thanh</div>
-                <div className="text-[11px] text-slate-400">Âm thanh click, ting ting nhận tiền, chuông nâng cấp</div>
+                <div className="text-xs md:text-sm font-bold text-slate-200">Hiệu Ứng Âm Thanh</div>
+                <div className="text-[10px] md:text-[11px] text-slate-400">Click, ting ting tiền, chuông nâng cấp</div>
               </div>
             </div>
             <button
               onClick={toggleSound}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+              className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-black transition-colors select-none active:scale-95 shrink-0 ${
                 soundEnabled 
-                  ? 'bg-amber-500 text-slate-950 font-black' 
+                  ? 'bg-amber-500 text-slate-950' 
                   : 'bg-slate-700 text-slate-300'
               }`}
             >
@@ -104,17 +105,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           </div>
 
           {/* Manual Save */}
-          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-800/60 border border-slate-700/60">
             <div className="flex items-center gap-2.5">
-              <Save className="w-5 h-5 text-emerald-400" />
+              <Save className="w-5 h-5 text-emerald-400 shrink-0" />
               <div>
-                <div className="text-sm font-bold text-slate-200">Lưu Tiến Trình Thủ Công</div>
-                <div className="text-[11px] text-slate-400">Game tự động lưu mỗi 10 giây</div>
+                <div className="text-xs md:text-sm font-bold text-slate-200">Lưu Tiến Trình Thủ Công</div>
+                <div className="text-[10px] md:text-[11px] text-slate-400">Game tự động lưu mỗi 10 giây</div>
               </div>
             </div>
             <button
               onClick={handleManualSave}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold transition-colors"
+              className="min-h-[40px] flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold transition-colors select-none active:scale-95 shrink-0"
             >
               {savedSuccess ? (
                 <>
@@ -131,15 +132,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={exportSaveData}
-              className="flex items-center justify-center gap-2 p-3 rounded-2xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-slate-200 text-xs font-bold transition-colors"
+              className="min-h-[44px] flex items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-all select-none active:scale-95 text-center"
             >
-              <Download className="w-4 h-4 text-sky-400" /> Xuất File Save (.json)
+              <Download className="w-4 h-4 text-sky-400 shrink-0" /> Xuất File Save
             </button>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center gap-2 p-3 rounded-2xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-slate-200 text-xs font-bold transition-colors"
+              className="min-h-[44px] flex items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-all select-none active:scale-95 text-center"
             >
-              <Upload className="w-4 h-4 text-purple-400" /> Nhập File Save
+              <Upload className="w-4 h-4 text-purple-400 shrink-0" /> Nhập File Save
             </button>
             <input
               type="file"
@@ -158,19 +159,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           )}
 
           {/* Reset Game */}
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               onClick={handleConfirmReset}
-              className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-rose-950/40 hover:bg-rose-950/80 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors"
+              className="w-full min-h-[44px] flex items-center justify-center gap-2 p-2.5 rounded-2xl bg-rose-950/40 hover:bg-rose-950/80 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all select-none active:scale-95"
             >
-              <RotateCcw className="w-4 h-4" /> Reset Toàn Bộ Game Về Ban Đầu
+              <RotateCcw className="w-4 h-4" /> Reset Game Về Ban Đầu
             </button>
           </div>
         </div>
 
-        {/* Footer info */}
-        <div className="text-center text-[11px] text-slate-500 font-medium">
-          Snack Empire v1.0.0 • Made with ❤️ for Gen Z Tycoons
+        <div className="text-center text-[10px] md:text-[11px] text-slate-500 font-medium">
+          Snack Empire • Gen Z Tycoon Game
         </div>
       </div>
     </div>

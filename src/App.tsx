@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useGameStore } from './store/gameStore';
 import { Header } from './components/Header';
 import { Navigation, TabId } from './components/Navigation';
+import { MobileBottomNav } from './components/MobileBottomNav';
+import { MobileMoreMenu } from './components/MobileMoreMenu';
 import { TutorialBanner } from './components/TutorialBanner';
 import { FloatingTexts } from './components/FloatingTexts';
 import { EventModal } from './components/EventModal';
@@ -21,6 +23,7 @@ export function App() {
   const { initGame, tickSimulation, quests } = useGameStore();
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   // Initialize game & offline check
   useEffect(() => {
@@ -47,8 +50,8 @@ export function App() {
       <TutorialBanner />
 
       {/* Main Layout */}
-      <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col lg:flex-row p-3 md:p-6 gap-6">
-        {/* Navigation Sidebar */}
+      <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col lg:flex-row p-3 md:p-6 gap-4 lg:gap-6 pb-24 lg:pb-6">
+        {/* Desktop Sidebar (Hidden on mobile) */}
         <Navigation
           activeTab={activeTab}
           onSelectTab={setActiveTab}
@@ -67,6 +70,25 @@ export function App() {
           {activeTab === 'prestige' && <PrestigeResearchView />}
         </main>
       </div>
+
+      {/* Mobile Fixed Bottom Navigation (Hidden on desktop) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        isMoreOpen={isMoreMenuOpen}
+        onToggleMore={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+        pendingQuestsCount={pendingQuestsCount}
+      />
+
+      {/* Mobile More Drawer / Bottom Sheet */}
+      <MobileMoreMenu
+        isOpen={isMoreMenuOpen}
+        onClose={() => setIsMoreMenuOpen(false)}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        pendingQuestsCount={pendingQuestsCount}
+      />
 
       {/* Overlays, Floating Texts & Modals */}
       <FloatingTexts />
