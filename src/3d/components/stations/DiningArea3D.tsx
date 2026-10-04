@@ -1,13 +1,16 @@
 import React from 'react';
 import { DINING_TABLES_LAYOUT } from '../../config/restaurantLayout';
-import type { DiningTableLayout, DiningSeatLayout } from '../../types/sceneTypes';
+import type { DiningTableLayout, DiningSeatLayout, Customer3DState } from '../../types/sceneTypes';
+import { FoodTrayProp3D } from '../props/FoodProps3D';
 
 interface DiningArea3DProps {
+  customers?: Customer3DState[];
   onSelectTable?: (table: DiningTableLayout) => void;
   onSelectSeat?: (seat: DiningSeatLayout) => void;
 }
 
 export const DiningArea3D: React.FC<DiningArea3DProps> = ({
+  customers = [],
   onSelectTable,
   onSelectSeat,
 }) => {
@@ -15,6 +18,12 @@ export const DiningArea3D: React.FC<DiningArea3DProps> = ({
     <group>
       {DINING_TABLES_LAYOUT.map(table => {
         const [tx, ty, tz] = table.position;
+        const hasEatingCustomer = customers.some(c => 
+          c.state === 'eating' && (
+            Math.hypot(c.currentPosition[0] - tx, c.currentPosition[2] - tz) < 1.8 ||
+            Math.hypot(c.targetPosition[0] - tx, c.targetPosition[2] - tz) < 1.8
+          )
+        );
 
         return (
           <group 
@@ -31,6 +40,11 @@ export const DiningArea3D: React.FC<DiningArea3DProps> = ({
               <meshStandardMaterial color="#44403c" roughness={0.4} metalness={0.05} />
             </mesh>
 
+            {/* Render Food Tray on table if customer is eating here */}
+            {hasEatingCustomer && (
+              <FoodTrayProp3D position={[0, 0.79, 0]} scale={1.0} />
+            )}
+
             {/* Table Frame & 4 Matte Black Metal Legs */}
             {[[-0.65, -0.5], [0.65, -0.5], [-0.65, 0.5], [0.65, 0.5]].map(([lx, lz], i) => (
               <mesh key={i} position={[lx, 0.35, lz]} castShadow>
@@ -40,21 +54,23 @@ export const DiningArea3D: React.FC<DiningArea3DProps> = ({
             ))}
 
             {/* Tabletop Center Condiment / Napkin Caddy */}
-            <group position={[0, 0.82, 0]}>
-              <mesh castShadow>
-                <boxGeometry args={[0.2, 0.1, 0.16]} />
-                <meshStandardMaterial color="#d97706" roughness={0.8} />
-              </mesh>
-              {/* Mini Salt & Pepper Shakers */}
-              <mesh position={[-0.05, 0.08, 0]} castShadow>
-                <cylinderGeometry args={[0.025, 0.025, 0.07]} />
-                <meshStandardMaterial color="#f8fafc" roughness={0.2} />
-              </mesh>
-              <mesh position={[0.05, 0.08, 0]} castShadow>
-                <cylinderGeometry args={[0.025, 0.025, 0.07]} />
-                <meshStandardMaterial color="#0f172a" roughness={0.2} />
-              </mesh>
-            </group>
+            {!hasEatingCustomer && (
+              <group position={[0, 0.82, 0]}>
+                <mesh castShadow>
+                  <boxGeometry args={[0.2, 0.1, 0.16]} />
+                  <meshStandardMaterial color="#d97706" roughness={0.8} />
+                </mesh>
+                {/* Mini Salt & Pepper Shakers */}
+                <mesh position={[-0.05, 0.08, 0]} castShadow>
+                  <cylinderGeometry args={[0.025, 0.025, 0.07]} />
+                  <meshStandardMaterial color="#f8fafc" roughness={0.2} />
+                </mesh>
+                <mesh position={[0.05, 0.08, 0]} castShadow>
+                  <cylinderGeometry args={[0.025, 0.025, 0.07]} />
+                  <meshStandardMaterial color="#0f172a" roughness={0.2} />
+                </mesh>
+              </group>
+            )}
 
             {/* 4 Chairs per Table */}
             {table.seats.map(seat => {

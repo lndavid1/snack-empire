@@ -82,6 +82,7 @@ export interface FoodItem {
 export type EmployeeRole = 
   | 'cook'
   | 'cashier'
+  | 'server'
   | 'barista'
   | 'shipper'
   | 'manager'
@@ -327,6 +328,11 @@ export interface Customer {
   priceSensitivity?: number; // 0.8 to 1.5
   qualitySensitivity?: number;
   speedSensitivity?: number;
+  isOrdered?: boolean;       // True when cashier/staff has taken order & enqueued bill
+  tableId?: string;          // Assigned dining table ID (e.g. 'table_01')
+  seatId?: string;           // Assigned seat ID (e.g. 'seat_01_2')
+  eatingTime?: number;       // Elapsed time spent eating at table in seconds
+  leavingTime?: number;      // Elapsed time spent exiting restaurant
 }
 
 export type OrderStatus =

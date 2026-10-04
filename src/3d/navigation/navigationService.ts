@@ -108,6 +108,15 @@ export function resolveEmployeeDestination(
     };
   }
 
+  if (employee.role === 'server') {
+    const serverPoint = INTERACTION_POINTS.find(p => p.id === 'point_pickup_server');
+    return {
+      targetPosition: serverPoint ? serverPoint.position : [6.8, 0, -2.0],
+      interactionPointId: serverPoint?.id,
+      reason: 'IDLE (waiting for ready food at counter)',
+    };
+  }
+
   return {
     targetPosition: RESTAURANT_LAYOUT.staff.idleArea,
     reason: 'IDLE in kitchen staging area',
@@ -123,7 +132,40 @@ export function resolveCustomerDestination(
   orders: Order[] = []
 ): { targetPosition: Vector3Tuple; pointId?: string; reason: string } {
   if (customer.state === 'waiting') {
-    // Check if food is READY and customer needs to pick it up
+    // If customer has been ordered, they sit at their dining table waiting for food
+    if (customer.isOrdered) {
+      if (customer.seatId) {
+        for (const table of DINING_TABLES_LAYOUT) {
+          const seat = table.seats.find(s => s.id === customer.seatId);
+          if (seat) {
+            return {
+              targetPosition: seat.position,
+              pointId: seat.id,
+              reason: `SEATED at ${table.name} waiting for food`,
+            };
+          }
+        }
+      }
+      if (customer.tableId) {
+        const table = DINING_TABLES_LAYOUT.find(t => t.id === customer.tableId);
+        if (table) {
+          return {
+            targetPosition: table.seats[0]?.position || table.position,
+            pointId: table.id,
+            reason: `SEATED at ${table.name} waiting for food`,
+          };
+        }
+      }
+      const tableIndex = queueIndex % DINING_TABLES_LAYOUT.length;
+      const table = DINING_TABLES_LAYOUT[tableIndex];
+      return {
+        targetPosition: table ? table.position : [-3.8, 0, 3.5],
+        pointId: table?.id,
+        reason: `SEATED at ${table ? table.name : 'table'} waiting for food`,
+      };
+    }
+
+    // Check if food is READY and customer needs to pick it up (counter mode)
     const order = orders.find(o => o.customerId === customer.id || o.id === customer.orderId);
     if (order && order.status === 'READY') {
       const pickupPoint = INTERACTION_POINTS.find(p => p.id === 'point_pickup_customer');
@@ -136,18 +178,30 @@ export function resolveCustomerDestination(
       }
     }
 
-    // Otherwise, assign sequential queue slot
+    // Otherwise, assign sequential queue slot to order
     const slotIdx = Math.min(queueIndex, QUEUE_SLOTS.length - 1);
     const slot = QUEUE_SLOTS[slotIdx];
     return {
       targetPosition: slot ? slot.position : [3.6, 0, 0.4],
       pointId: slot ? slot.id : undefined,
-      reason: `WAITING in queue slot #${slotIdx + 1}`,
+      reason: `WAITING in queue slot #${slotIdx + 1} to order`,
     };
   }
 
   if (customer.state === 'eating') {
-    // Target dining table
+    // Target dining seat or table
+    if (customer.seatId) {
+      for (const table of DINING_TABLES_LAYOUT) {
+        const seat = table.seats.find(s => s.id === customer.seatId);
+        if (seat) {
+          return {
+            targetPosition: seat.position,
+            pointId: seat.id,
+            reason: `EATING at ${table.name}`,
+          };
+        }
+      }
+    }
     const tableIndex = queueIndex % DINING_TABLES_LAYOUT.length;
     const table = DINING_TABLES_LAYOUT[tableIndex];
     return {

@@ -166,7 +166,11 @@ export const Customer3D: React.FC<Customer3DProps> = ({
           <div className="flex items-center gap-1.5 justify-center">
             <span className="text-xs">{moodEmoji}</span>
             <span className="font-black text-[10px] text-amber-300">
-              {isEating ? 'Đang thưởng thức 🍟' : (customer.orderedFoodName || 'Đang gọi món')}
+              {isEating 
+                ? 'Đang ăn ngon lành 🍟' 
+                : (customer.isOrdered 
+                  ? 'Chờ bưng món 🍽️' 
+                  : (customer.orderedFoodName ? `Gọi: ${customer.orderedFoodName}` : 'Đang xếp hàng...'))}
             </span>
             {customer.orderPrice && !isEating && (
               <span className="text-[9px] font-bold text-emerald-400">

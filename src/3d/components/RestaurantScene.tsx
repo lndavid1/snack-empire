@@ -69,6 +69,7 @@ export const RestaurantScene: React.FC<RestaurantSceneProps> = ({
 
       {/* 7. Customer Dining Area */}
       <DiningArea3D 
+        customers={sceneState.customers}
         onSelectTable={(table) => onInspect({ type: 'table', data: table })}
         onSelectSeat={(seat) => onInspect({ type: 'seat', data: seat })}
       />

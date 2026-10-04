@@ -65,6 +65,9 @@ export interface Customer3DState {
   currentPosition: Vector3Tuple;
   targetPosition: Vector3Tuple;
   state: 'waiting' | 'eating' | 'leaving' | 'rage_quit';
+  isOrdered?: boolean;
+  tableId?: string;
+  seatId?: string;
 }
 
 export interface ReadyItem3DState {

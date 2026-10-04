@@ -1,4 +1,4 @@
-import { RESTAURANT_LAYOUT } from '../config/restaurantLayout';
+import { RESTAURANT_LAYOUT, DINING_TABLES_LAYOUT } from '../config/restaurantLayout';
 import { getRecipeById } from '../../data/recipes';
 import type { 
   ProductionStation, 
@@ -112,7 +112,9 @@ export function mapEmployeesTo3D(
         targetPos = [RESTAURANT_LAYOUT.staff.idleArea[0] + (index * 0.7), 0, RESTAURANT_LAYOUT.staff.idleArea[2]];
       }
     } else if (workState === 'SERVING') {
-      targetPos = RESTAURANT_LAYOUT.serviceCounter.cashierPosition;
+      targetPos = emp.role === 'server'
+        ? [6.8, 0, 0.4] // Waiter pickup position at counter
+        : RESTAURANT_LAYOUT.serviceCounter.cashierPosition;
     } else if (workState === 'RESTING') {
       targetPos = [
         RESTAURANT_LAYOUT.staff.restArea[0] + (index * 0.6),
@@ -125,6 +127,8 @@ export function mapEmployeesTo3D(
       // IDLE or SEEKING_JOB
       if (emp.role === 'cashier') {
         targetPos = RESTAURANT_LAYOUT.serviceCounter.cashierPosition;
+      } else if (emp.role === 'server') {
+        targetPos = [6.0, 0, 0.4]; // Server staging near pickup counter
       } else {
         targetPos = [
           RESTAURANT_LAYOUT.staff.idleArea[0] + (index * 0.8),
@@ -153,12 +157,14 @@ export function mapEmployeesTo3D(
 }
 
 /**
- * Pure mapping function: Maps Zustand Customers to 3D Customer States and queue positions.
+ * Pure mapping function: Maps Zustand Customers to 3D Customer States, table seats, and queue positions.
  */
 export function mapCustomersTo3D(
   customers: Customer[],
   foods: FoodItem[]
 ): Customer3DState[] {
+  const unOrderedCustomers = customers.filter(c => c.state === 'waiting' && !c.isOrdered);
+
   return customers.map((cust, queueIndex) => {
     const maxPatience = cust.maxPatience || 20;
     const patience = cust.patience !== undefined ? cust.patience : (cust.currentWait !== undefined ? cust.currentWait : 20);
@@ -167,12 +173,31 @@ export function mapCustomersTo3D(
 
     let targetPos: Vector3Tuple;
 
-    if (cust.state === 'waiting') {
-      const slotIndex = Math.min(queueIndex, RESTAURANT_LAYOUT.customer.queueSlots.length - 1);
+    if (cust.state === 'waiting' && !cust.isOrdered) {
+      // Waiting in line to order at counter
+      const unOrderedIndex = unOrderedCustomers.findIndex(c => c.id === cust.id);
+      const slotIndex = Math.min(Math.max(0, unOrderedIndex !== -1 ? unOrderedIndex : queueIndex), RESTAURANT_LAYOUT.customer.queueSlots.length - 1);
       targetPos = RESTAURANT_LAYOUT.customer.queueSlots[slotIndex];
-    } else if (cust.state === 'eating') {
-      const tableIndex = queueIndex % RESTAURANT_LAYOUT.customer.diningTables.length;
-      targetPos = RESTAURANT_LAYOUT.customer.diningTables[tableIndex].position;
+    } else if (cust.state === 'eating' || (cust.state === 'waiting' && cust.isOrdered)) {
+      // Seated at assigned dining table/seat
+      let seatPos: Vector3Tuple | undefined;
+      if (cust.seatId) {
+        for (const table of DINING_TABLES_LAYOUT) {
+          const s = table.seats.find(st => st.id === cust.seatId);
+          if (s) {
+            seatPos = s.position;
+            break;
+          }
+        }
+      }
+      if (!seatPos && cust.tableId) {
+        const table = DINING_TABLES_LAYOUT.find(t => t.id === cust.tableId);
+        if (table) {
+          seatPos = table.seats[0]?.position || table.position;
+        }
+      }
+      const fallbackTableIdx = queueIndex % RESTAURANT_LAYOUT.customer.diningTables.length;
+      targetPos = seatPos || RESTAURANT_LAYOUT.customer.diningTables[fallbackTableIdx].position;
     } else {
       // Leaving or rage quit
       targetPos = RESTAURANT_LAYOUT.customer.exit;
@@ -194,6 +219,9 @@ export function mapCustomersTo3D(
       currentPosition: targetPos,
       targetPosition: targetPos,
       state: cust.state,
+      isOrdered: cust.isOrdered,
+      tableId: cust.tableId,
+      seatId: cust.seatId,
     };
   });
 }

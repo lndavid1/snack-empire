@@ -146,9 +146,20 @@ export const EmployeeWorkflowService = {
     return false;
   },
 
-  // 8. Check if employee is a service worker (cashier/shipper/manager)
+  // 8. Check if employee is a service worker (cashier/server/shipper/manager)
   isServiceWorker(employee: Employee): boolean {
     if (!employee.hired) return false;
-    return ['cashier', 'shipper', 'manager'].includes(employee.role);
+    return ['cashier', 'server', 'shipper', 'manager'].includes(employee.role);
+  },
+
+  // 9. Dedicated role checkers
+  isServer(employee: Employee): boolean {
+    if (!employee.hired) return false;
+    return employee.role === 'server';
+  },
+
+  isCashier(employee: Employee): boolean {
+    if (!employee.hired) return false;
+    return employee.role === 'cashier' || employee.role === 'manager';
   }
 };

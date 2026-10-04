@@ -41,6 +41,7 @@ import { SatisfactionService } from '../services/satisfaction';
 import { EmployeeWorkflowService } from '../services/employeeWorkflow';
 import { sound } from '../services/sound';
 import { StorageService, SaveData } from '../services/storage';
+import { DINING_TABLES_LAYOUT } from '../3d/config/restaurantLayout';
 
 const CUSTOMER_NAMES = [
   'Minh', 'Hương', 'Đức', 'Linh', 'Khánh', 'Tuấn', 'Trang', 'Bảo', 'Hoàng', 'My',
@@ -139,7 +140,8 @@ export interface GameState {
   // Actions
   initGame: () => void;
   tickSimulation: () => void;
-  manualCookAndServe: (customerId?: string) => boolean;
+  manualCookAndServe: (customerId?: string, options?: { transitionToEating?: boolean }) => boolean;
+  takeCustomerOrder: (customerId: string, cashierId?: string) => boolean;
   buyIngredient: (id: string, amount: number) => boolean;
   setSelectedSupplier: (id: string) => void;
   toggleAutoRestock: () => void;
@@ -291,7 +293,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   // Manual Cook & Serve Button (Hero Action & Service Pipeline)
-  manualCookAndServe: (customerId?: string) => {
+  manualCookAndServe: (customerId?: string, options?: { transitionToEating?: boolean }) => {
     const state = get();
     const customers = [...state.customers];
     if (customers.length === 0) return false;
@@ -378,7 +380,15 @@ export const useGameStore = create<GameState>((set, get) => ({
           sound.playCoin();
         }
 
-        customers.splice(targetIdx, 1);
+        if (options?.transitionToEating) {
+          customers[targetIdx] = {
+            ...customer,
+            state: 'eating',
+            eatingTime: 0
+          };
+        } else {
+          customers.splice(targetIdx, 1);
+        }
         if (tipAmount > 0) {
           state.addFloatingText(`+ $${earned} (+$${tipAmount} tip 💵)`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
         } else {
@@ -583,7 +593,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       sound.playCoin();
     }
 
-    customers.splice(targetIdx, 1);
+    if (options?.transitionToEating) {
+      customers[targetIdx] = {
+        ...customer,
+        state: 'eating',
+        eatingTime: 0
+      };
+    } else {
+      customers.splice(targetIdx, 1);
+    }
     if (tipAmount > 0) {
       state.addFloatingText(`+ $${earned} (+$${tipAmount} tip 💵)`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
     } else {
@@ -637,6 +655,79 @@ export const useGameStore = create<GameState>((set, get) => ({
       achievements: updatedAchievements,
       reputation: Math.min(100, Math.max(0, state.reputation + satisfactionResult.reputationDelta)),
       brandValue: state.brandValue + 2
+    });
+
+    return true;
+  },
+
+  // Cashier Auto-Order Action: take order from waiting customer and assign dining seat
+  takeCustomerOrder: (customerId: string, cashierId?: string) => {
+    const state = get();
+    const customer = state.customers.find(c => c.id === customerId);
+    if (!customer || customer.state !== 'waiting' || customer.isOrdered) return false;
+
+    // Enqueue bill into kitchen queue if recipe is unlocked
+    const foodId = customer.orderedFoodId || customer.favoriteFoodId;
+    const matchingRecipe = getRecipeByFoodItemId(foodId || '');
+    if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
+      get().enqueueProductionJob(matchingRecipe.id, customer.id);
+    }
+
+    // Find vacant dining seat in DINING_TABLES_LAYOUT
+    const occupiedSeats = new Set(
+      state.customers
+        .filter(c => c.id !== customer.id && c.seatId && (c.state === 'waiting' || c.state === 'eating'))
+        .map(c => c.seatId)
+    );
+
+    let assignedTableId = 'table_01';
+    let assignedSeatId = 'seat_01_1';
+    let seatFound = false;
+
+    for (const table of DINING_TABLES_LAYOUT) {
+      for (const seat of table.seats) {
+        if (!occupiedSeats.has(seat.id)) {
+          assignedTableId = table.id;
+          assignedSeatId = seat.id;
+          seatFound = true;
+          break;
+        }
+      }
+      if (seatFound) break;
+    }
+
+    const foodObj = state.foods.find(f => f.id === foodId);
+    const cashier = cashierId ? state.employees.find(e => e.id === cashierId) : undefined;
+    const staffName = cashier ? cashier.name : 'Quầy Thu Ngân';
+    const tableName = DINING_TABLES_LAYOUT.find(t => t.id === assignedTableId)?.name || assignedTableId;
+
+    const updatedCustomers = state.customers.map(c => {
+      if (c.id === customerId) {
+        return {
+          ...c,
+          isOrdered: true,
+          tableId: assignedTableId,
+          seatId: assignedSeatId
+        };
+      }
+      return c;
+    });
+
+    const newLog: EmployeeLogEvent = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: Date.now(),
+      employeeId: cashierId || 'cashier_register',
+      employeeName: staffName,
+      message: `${staffName} đã nhận order cho ${customer.name} (${foodObj ? foodObj.name : 'Món ăn'}) -> Bàn ${tableName}! 📝`,
+      type: 'work'
+    };
+
+    sound.playClick();
+    state.addFloatingText(`📝 Nhận order: ${foodObj?.name || 'Món'}!`, getSafeCenterX() + (Math.random() * 40 - 20), getSafeCenterY() - 30, 'text-amber-300 font-bold');
+
+    set({
+      customers: updatedCustomers,
+      employeeLogs: [newLog, ...state.employeeLogs.slice(0, 19)]
     });
 
     return true;
@@ -743,6 +834,33 @@ export const useGameStore = create<GameState>((set, get) => ({
           const ord = updatedOrders.find(o => o.id === c.orderId || o.customerId === c.id);
           if (ord) ord.waitingTime = nextWaiting;
         }
+      } else if (c.state === 'eating') {
+        const nextEatingTime = (c.eatingTime || 0) + 1;
+        if (nextEatingTime >= 4) {
+          // Finished meal! Leave table and head to exit
+          activeCustomers.push({
+            ...c,
+            state: 'leaving',
+            eatingTime: nextEatingTime,
+            leavingTime: 0,
+            tableId: undefined,
+            seatId: undefined
+          });
+        } else {
+          activeCustomers.push({
+            ...c,
+            eatingTime: nextEatingTime
+          });
+        }
+      } else if (c.state === 'leaving') {
+        const nextLeavingTime = (c.leavingTime || 0) + 1;
+        if (nextLeavingTime < 2) {
+          activeCustomers.push({
+            ...c,
+            leavingTime: nextLeavingTime
+          });
+        }
+        // When leavingTime >= 2, customer reaches exit portal and is removed
       } else {
         activeCustomers.push(c);
       }
@@ -795,6 +913,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         orderedFoodId: chosenFood.id,
         orderId: ordId,
         state: 'waiting',
+        isOrdered: false,
         satisfaction: 5,
         quote: GEN_Z_QUOTES[Math.floor(Math.random() * GEN_Z_QUOTES.length)],
         currentWait: initialPatience,
@@ -856,11 +975,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       activeEvent: currentEvent
     });
 
-    // 6. Auto-enqueue production job if customer ordered a recipe supported by production engine
-    if (newlySpawnedCustomer && newlySpawnedOrder) {
-      const matchingRecipe = getRecipeByFoodItemId(newlySpawnedCustomer.orderedFoodId || '');
-      if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
-        get().enqueueProductionJob(matchingRecipe.id, newlySpawnedCustomer.id);
+    // 6. Cashier auto-order fallback for solo player without cashier staff
+    const hasHiredCashier = state.employees.some(e => e.hired && EmployeeWorkflowService.isCashier(e));
+    if (!hasHiredCashier) {
+      const pendingCustomer = activeCustomers.find(c => c.state === 'waiting' && !c.isOrdered && (c.waitingTime || 0) >= 2);
+      if (pendingCustomer) {
+        get().takeCustomerOrder(pendingCustomer.id);
       }
     }
   },
@@ -1937,7 +2057,33 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
       }
 
-      // 2. Service Employees (Cashier, Shipper, Manager)
+      // 2A. Cashier Order Taking (Receive order from counter queue, enqueue bill to kitchen, assign dining seat)
+      if (EmployeeWorkflowService.isCashier(emp) && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
+        const unOrderedCustomers = state.customers.filter(c => {
+          if (c.state !== 'waiting' || c.isOrdered) return false;
+          if (!c.orderId) return true;
+          const ord = updatedOrders.find(o => o.id === c.orderId);
+          return !ord || ord.status === 'PENDING';
+        });
+
+        if (unOrderedCustomers.length > 0) {
+          const nextCustomer = unOrderedCustomers[0];
+          get().takeCustomerOrder(nextCustomer.id, emp.id);
+
+          emp.workState = 'WORKING';
+          emp.currentLocation = 'SERVICE_AREA';
+          emp.stamina = EmployeeWorkflowService.updateStamina(emp.stamina ?? 100, true, deltaSeconds, emp.archetype);
+          emp.workState = 'IDLE';
+
+          const freshState = get();
+          updatedJobs = freshState.productionJobs.map(j => ({ ...j }));
+          updatedOrders = freshState.orders.map(o => ({ ...o }));
+          updatedLogs = freshState.employeeLogs;
+          continue;
+        }
+      }
+
+      // 2B. Server Delivery & Service Workers (Server picks up READY food from counter, brings to customer table)
       if (EmployeeWorkflowService.isServiceWorker(emp) && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
         const readyJobs = updatedJobs.filter(j => j.status === 'READY');
         if (readyJobs.length > 0 && state.customers.some(c => c.state === 'waiting')) {
@@ -1952,10 +2098,14 @@ export const useGameStore = create<GameState>((set, get) => ({
 
               if (isMatch) {
                 const ord = updatedOrders.find(o => o.id === cust.orderId || o.customerId === cust.id);
-                const priority = EmployeeWorkflowService.getServicePriority(
+                let priority = EmployeeWorkflowService.getServicePriority(
                   ord || { id: 'tmp', customerId: cust.id, foodId: cust.orderedFoodId || '', quantity: 1, createdAt: Date.now(), waitingTime: cust.waitingTime || 0, status: 'READY', basePrice: 10 },
                   cust
                 );
+                // Dedicated server gets huge priority bonus for serving tasks
+                if (emp.role === 'server') {
+                  priority += 500;
+                }
                 candidates.push({ job: rJob, customer: cust, priority });
               }
             }
@@ -1969,8 +2119,13 @@ export const useGameStore = create<GameState>((set, get) => ({
             emp.currentLocation = 'SERVICE_AREA';
             emp.currentOrderId = best.customer.orderId;
 
+            // If employee is dedicated server or customer was seated at a table, transition customer to eating at table
+            const isDedicatedServer = emp.role === 'server';
+            const hasTable = Boolean(best.customer.tableId || best.customer.seatId);
+            const transitionToEating = isDedicatedServer || (hasTable && best.customer.isOrdered === true);
+
             // Trigger manualCookAndServe
-            get().manualCookAndServe(best.customer.id);
+            get().manualCookAndServe(best.customer.id, { transitionToEating });
 
             // Pull fresh jobs and orders updated by manualCookAndServe
             const freshState = get();
@@ -1982,15 +2137,23 @@ export const useGameStore = create<GameState>((set, get) => ({
             emp.currentOrderId = undefined;
 
             const foodObj = state.foods.find(f => f.id === best.customer.orderedFoodId);
+            const tableName = best.customer.tableId 
+              ? (DINING_TABLES_LAYOUT.find(t => t.id === best.customer.tableId)?.name || best.customer.tableId)
+              : '';
+            const serveMsg = isDedicatedServer
+              ? `${emp.name} đã bưng ${foodObj ? foodObj.name : 'món ăn'} phục vụ bàn ${tableName || 'khách'} cho ${best.customer.name}! 💁🍱`
+              : `${emp.name} đã phục vụ ${foodObj ? foodObj.name : 'món ăn'} cho khách ${best.customer.name}! 🍱`;
+
             const newLog: EmployeeLogEvent = {
               id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
               timestamp: Date.now(),
               employeeId: emp.id,
               employeeName: emp.name,
-              message: `${emp.name} đã phục vụ ${foodObj ? foodObj.name : 'món ăn'} cho khách ${best.customer.name}! 🍱`,
+              message: serveMsg,
               type: 'serve'
             };
             updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
+            continue;
           }
         }
       }

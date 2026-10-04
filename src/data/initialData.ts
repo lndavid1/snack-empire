@@ -411,6 +411,33 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     }
   },
   {
+    id: 'emp_server_hoa',
+    name: 'Hoa "Nhanh Nhẹn"',
+    role: 'server',
+    avatar: '💁',
+    level: 1,
+    speed: 45,
+    quality: 55,
+    salaryPerSec: 0.6,
+    hired: false,
+    hireCost: 150,
+    upgradeCost: 90,
+    mood: 95,
+    catchphrase: '"Món nóng hổi thơm phức vừa ra lò đây ạ!"',
+    archetype: 'SERVICE',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'SERVICE_AREA',
+    skills: {
+      speed: 50,
+      quality: 60,
+      accuracy: 65,
+      service: 80,
+      stamina: 100
+    }
+  },
+  {
     id: 'emp_cook_bob',
     name: 'Bếp Trưởng Bob',
     role: 'cook',
