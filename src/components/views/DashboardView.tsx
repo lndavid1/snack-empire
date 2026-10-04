@@ -23,6 +23,7 @@ export const DashboardView: React.FC = () => {
     manualCookAndServe,
     totalSalesCount,
     totalRevenueEarned,
+    totalTipsEarned,
     totalCustomersServed,
     reviews,
     stations,
@@ -38,6 +39,14 @@ export const DashboardView: React.FC = () => {
   const hasCashier = employees.some((emp: Employee) => emp.role === 'cashier' && emp.hired);
   const isAutomated = hasCook && hasCashier;
   const readyJobs = productionJobs.filter(j => j.status === 'READY');
+
+  const MOOD_EMOJIS: Record<string, string> = {
+    DELIGHTED: '😍',
+    HAPPY: '😊',
+    NEUTRAL: '😐',
+    IMPATIENT: '😟',
+    ANGRY: '😡'
+  };
 
   const handleHeroClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -98,7 +107,7 @@ export const DashboardView: React.FC = () => {
           </div>
 
           {/* Quick Metrics */}
-          <div className="grid grid-cols-3 gap-2 md:gap-3 w-full md:w-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 w-full md:w-auto">
             <div className="bg-slate-800/80 border border-slate-700/60 p-2 md:p-3 rounded-xl md:rounded-2xl text-center">
               <div className="text-[10px] md:text-[11px] font-bold text-slate-400">ĐÃ PHỤC VỤ</div>
               <div className="text-sm md:text-lg font-black text-amber-400">
@@ -106,13 +115,19 @@ export const DashboardView: React.FC = () => {
               </div>
             </div>
             <div className="bg-slate-800/80 border border-slate-700/60 p-2 md:p-3 rounded-xl md:rounded-2xl text-center">
-              <div className="text-[10px] md:text-[11px] font-bold text-slate-400">TỔNG ĐƠN BÁN</div>
+              <div className="text-[10px] md:text-[11px] font-bold text-slate-400">TỔNG ĐƠN</div>
               <div className="text-sm md:text-lg font-black text-emerald-400">
                 {totalSalesCount.toLocaleString()}
               </div>
             </div>
             <div className="bg-slate-800/80 border border-slate-700/60 p-2 md:p-3 rounded-xl md:rounded-2xl text-center">
-              <div className="text-[10px] md:text-[11px] font-bold text-slate-400">TỔNG THU VỀ</div>
+              <div className="text-[10px] md:text-[11px] font-bold text-slate-400">TIỀN TIP</div>
+              <div className="text-sm md:text-lg font-black text-amber-300">
+                +${(totalTipsEarned || 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="bg-slate-800/80 border border-slate-700/60 p-2 md:p-3 rounded-xl md:rounded-2xl text-center">
+              <div className="text-[10px] md:text-[11px] font-bold text-slate-400">TỔNG THU</div>
               <div className="text-sm md:text-lg font-black text-sky-400">
                 ${totalRevenueEarned.toLocaleString()}
               </div>
@@ -135,42 +150,51 @@ export const DashboardView: React.FC = () => {
                 </h3>
               </div>
               <span className="text-[11px] md:text-xs text-slate-400 font-medium">
-                {customers.length === 0 ? 'Đang chờ khách ghé...' : 'Khách đang đói! 🔥'}
+                {customers.length === 0 ? 'Đang chờ khách ghé...' : 'Khách đang đợi món! 🕒'}
               </span>
             </div>
 
             {/* Customers Scrollable List */}
-            <div className="min-h-[105px] flex items-center gap-2.5 overflow-x-auto pb-2 no-scrollbar">
+            <div className="min-h-[110px] flex items-center gap-2.5 overflow-x-auto pb-2 no-scrollbar">
               {customers.length === 0 ? (
                 <div className="w-full text-center py-5 text-slate-500 font-medium text-xs flex flex-col items-center gap-1.5">
                   <span className="text-2xl animate-bounce">🚶‍♂️</span>
                   Khách đang tới quán! Bấm nút bên dưới để phục vụ.
                 </div>
               ) : (
-                customers.map((c: Customer, _idx: number) => {
-                  const patiencePercent = Math.max(0, (c.currentWait / c.patience) * 100);
+                customers.map((c: Customer) => {
+                  const maxPatience = c.maxPatience || 20;
+                  const currentPatience = c.patience !== undefined ? c.patience : (c.currentWait !== undefined ? c.currentWait : 20);
+                  const patiencePercent = Math.max(0, Math.min(100, (currentPatience / maxPatience) * 100));
                   const foodItem = foods.find((f: FoodItem) => f.id === c.orderedFoodId) || foods[0];
+                  const moodEmoji = MOOD_EMOJIS[c.mood || 'HAPPY'] || '😊';
 
                   return (
                     <div
                       key={c.id}
-                      className="shrink-0 w-28 md:w-36 bg-slate-800/90 border border-slate-700/80 rounded-2xl p-2.5 md:p-3 flex flex-col items-center text-center relative hover:scale-105 transition-transform"
+                      className="shrink-0 w-32 md:w-40 bg-slate-800/90 border border-slate-700/80 rounded-2xl p-2.5 md:p-3 flex flex-col items-center text-center relative hover:scale-105 transition-transform"
                     >
                       {/* Customer Order Bubble */}
-                      <div className="absolute -top-3 bg-amber-500 text-slate-950 px-2 py-0.2 rounded-full text-[10px] md:text-[11px] font-black border border-amber-300 shadow-sm flex items-center gap-1">
+                      <div className="absolute -top-3 bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] md:text-[11px] font-black border border-amber-300 shadow-sm flex items-center gap-1">
                         <span>{foodItem.icon}</span>
                         <span>${foodItem.sellingPrice}</span>
                       </div>
 
-                      {/* Avatar */}
-                      <div className="text-2xl md:text-3xl my-1">{c.avatar}</div>
+                      {/* Avatar & Mood Badge */}
+                      <div className="relative my-1">
+                        <div className="text-2xl md:text-3xl">{c.avatar}</div>
+                        <span className="absolute -bottom-1 -right-2 text-sm" title={`Tâm trạng: ${c.mood || 'Bình thường'}`}>
+                          {moodEmoji}
+                        </span>
+                      </div>
 
                       {/* Name & Archetype */}
                       <div className="font-bold text-[11px] md:text-xs text-slate-200 truncate w-full">
                         {c.name}
                       </div>
-                      <div className="text-[9px] md:text-[10px] text-slate-400 capitalize">
-                        {c.archetype}
+                      <div className="flex items-center justify-between w-full text-[9px] text-slate-400 mt-0.5">
+                        <span className="capitalize">{c.archetype}</span>
+                        <span className="font-mono text-amber-300/80">⏳ {c.waitingTime || 0}s</span>
                       </div>
 
                       {/* Patience Progress Bar */}
@@ -192,6 +216,53 @@ export const DashboardView: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Ready Food Buffet / Serving Tray (Phase 4 Ready Section) */}
+          {readyJobs.length > 0 && (
+            <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl md:rounded-3xl p-3 md:p-4 shadow-lg space-y-2 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <PackageCheck className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
+                  <h3 className="font-black text-xs md:text-sm text-emerald-300">
+                    Khay Món Đã Chín Chờ Bưng ({readyJobs.length})
+                  </h3>
+                </div>
+                <span className="text-[10px] md:text-xs font-bold text-emerald-400/90 animate-pulse">
+                  Chạm nút Bưng Món bên dưới để nhận tiền & tiền tip! 💵
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {readyJobs.map(job => {
+                  const recipe = getRecipeById(job.recipeId);
+                  const freshness = job.freshness ?? 100;
+                  const temperature = job.temperature ?? 100;
+
+                  return (
+                    <div
+                      key={job.id}
+                      className="shrink-0 bg-slate-900/90 border border-emerald-500/30 rounded-xl px-3 py-1.5 flex items-center gap-2.5"
+                    >
+                      <span className="text-lg">🍟</span>
+                      <div>
+                        <div className="font-bold text-xs text-slate-100">
+                          {recipe?.name || 'Món ăn'}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] font-semibold mt-0.5">
+                          <span className={freshness >= 80 ? 'text-emerald-400' : 'text-amber-400'}>
+                            🌿 Tươi {freshness}%
+                          </span>
+                          <span className={temperature >= 70 ? 'text-orange-400' : temperature >= 40 ? 'text-amber-300' : 'text-sky-300'}>
+                            🔥 {temperature >= 70 ? 'Nóng giòn' : temperature >= 40 ? 'Ấm' : 'Nguội'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Production Kitchen & Stations Monitor (Phase 3 Engine) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl md:rounded-3xl p-4 md:p-5 shadow-lg space-y-3">
@@ -323,7 +394,7 @@ export const DashboardView: React.FC = () => {
               </div>
               <span className="text-[11px] md:text-xs font-bold tracking-normal opacity-90 text-slate-900">
                 {readyJobs.length > 0
-                  ? `[ Món đã nấu chín trong bếp! Chạm để bưng phục vụ khách ]`
+                  ? `[ Món đã nấu chín trong bếp! Chạm để bưng phục vụ khách và nhận tiền tip ]`
                   : customers.length > 0
                   ? `[ Chạm để nấu món cho khách đầu tiên ]`
                   : `(Đang đợi khách hàng tiếp theo...)`}
@@ -343,24 +414,32 @@ export const DashboardView: React.FC = () => {
                 </h3>
               </div>
               <span className="text-[10px] md:text-[11px] font-bold text-amber-400 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30">
-                5.0 ★ Top Hot
+                Live Feedback
               </span>
             </div>
 
             {/* Review Cards list */}
-            <div className="space-y-2 max-h-[260px] md:max-h-[360px] overflow-y-auto pr-1 no-scrollbar">
+            <div className="space-y-2 max-h-[280px] md:max-h-[380px] overflow-y-auto pr-1 no-scrollbar">
               {reviews.map((rev: Review) => (
                 <div
                   key={rev.id}
-                  className="bg-slate-800/80 border border-slate-700/70 rounded-xl md:rounded-2xl p-2.5 md:p-3 text-xs space-y-1"
+                  className="bg-slate-800/80 border border-slate-700/70 rounded-xl md:rounded-2xl p-2.5 md:p-3 text-xs space-y-1.5"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 font-bold text-slate-200">
                       <span>{rev.avatar}</span>
                       <span>{rev.customerName}</span>
                     </div>
-                    <div className="flex text-amber-400 text-[10px]">
-                      {'★'.repeat(rev.stars)}
+                    <div className="flex items-center gap-1">
+                      <div className="flex text-amber-400 text-[10px]">
+                        {'★'.repeat(rev.stars)}
+                        <span className="text-slate-600">{'★'.repeat(Math.max(0, 5 - rev.stars))}</span>
+                      </div>
+                      {rev.tipAmount !== undefined && rev.tipAmount > 0 && (
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                          +${rev.tipAmount} tip
+                        </span>
+                      )}
                     </div>
                   </div>
                   <p className="text-slate-300 font-medium italic text-[11px] md:text-xs">

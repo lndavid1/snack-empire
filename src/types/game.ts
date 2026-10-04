@@ -225,8 +225,11 @@ export interface ProductionJob {
   currentStepIndex: number;
   progress: number;         // 0 to 100
   startedAt?: number;
+  readyAt?: number;         // Timestamp when status reached READY
   completedAt?: number;
-  qualityScore?: number;    // 0 to 100
+  qualityScore?: number;    // Base quality score 0-100
+  freshness?: number;       // 0-100 (decays over time after readyAt)
+  temperature?: number;     // 0-100 (decays over time after readyAt)
   consumedStepIndices?: number[]; // indices of steps whose ingredients were consumed
 }
 
@@ -245,19 +248,55 @@ export interface StoreUpgrade {
   effectValue: number;
 }
 
+export type CustomerMood = 'DELIGHTED' | 'HAPPY' | 'NEUTRAL' | 'IMPATIENT' | 'ANGRY';
+
 export interface Customer {
   id: string;
   name: string;
   archetype: 'student' | 'gamer' | 'office' | 'influencer' | 'foodie' | 'vip' | 'grandma';
   avatar: string;
   budget: number;
-  patience: number;     // max wait time
-  currentWait: number;
+  patience: number;          // Remaining wait time in seconds
+  maxPatience?: number;      // Initial total patience
+  waitingTime?: number;      // Total seconds elapsed waiting for food
+  mood?: CustomerMood;       // Dynamic mood: DELIGHTED | HAPPY | NEUTRAL | IMPATIENT | ANGRY
   favoriteFoodId: string;
   orderedFoodId?: string;
+  orderId?: string;          // Linked active Order id
   state: 'waiting' | 'eating' | 'leaving' | 'rage_quit';
-  satisfaction: number; // 1 to 5 stars
+  satisfaction: number;      // 1 to 5 stars
   quote: string;
+  currentWait?: number;      // Backward compatibility alias for patience
+  priceSensitivity?: number; // 0.8 to 1.5
+  qualitySensitivity?: number;
+  speedSensitivity?: number;
+}
+
+export type OrderStatus =
+  | 'PENDING'
+  | 'PRODUCING'
+  | 'READY'
+  | 'SERVED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'FAILED';
+
+export interface Order {
+  id: string;
+  customerId: string;
+  foodId: string;
+  recipeId?: string;
+  quantity: number;
+  createdAt: number;
+  waitingTime: number;
+  status: OrderStatus;
+  productionJobId?: string;
+  servedAt?: number;
+  basePrice: number;
+  finalPrice?: number;
+  satisfactionScore?: number; // 0 to 100
+  tipAmount?: number;
+  reviewId?: string;
 }
 
 export interface RandomEvent {
@@ -290,6 +329,13 @@ export interface Review {
   comment: string;
   timeAgo: string;
   foodName: string;
+  // Phase 4 additions
+  customerId?: string;
+  orderId?: string;
+  foodId?: string;
+  satisfactionScore?: number;
+  tipAmount?: number;
+  createdAt?: number;
 }
 
 export interface SnackTokPost {

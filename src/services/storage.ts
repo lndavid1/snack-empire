@@ -24,6 +24,7 @@ export interface SaveData {
   totalRevenueEarned: number;
   claimedQuests: string[];
   unlockedAchievements: string[];
+  totalTipsEarned?: number;
   // Phase 2 additions
   equipment?: Equipment[];
   stations?: ProductionStation[];
@@ -68,6 +69,7 @@ export const StorageService = {
       prestigeUpgrades: raw.prestigeUpgrades || {},
       totalSalesCount: raw.totalSalesCount || 0,
       totalRevenueEarned: raw.totalRevenueEarned || 0,
+      totalTipsEarned: raw.totalTipsEarned || 0,
       claimedQuests: Array.isArray(raw.claimedQuests) ? raw.claimedQuests : [],
       unlockedAchievements: Array.isArray(raw.unlockedAchievements) ? raw.unlockedAchievements : [],
       equipment,

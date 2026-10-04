@@ -17,7 +17,9 @@ import {
   StoreTierId,
   Equipment,
   ProductionStation,
-  ProductionJob
+  ProductionJob,
+  Order,
+  CustomerMood
 } from '../types/game';
 import {
   STORE_TIERS,
@@ -34,6 +36,7 @@ import {
 } from '../data/initialData';
 import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
 import { RECIPES_CATALOG, getRecipeById, getRecipeByFoodItemId } from '../data/recipes';
+import { SatisfactionService } from '../services/satisfaction';
 import { sound } from '../services/sound';
 import { StorageService, SaveData } from '../services/storage';
 
@@ -84,6 +87,7 @@ export interface GameState {
   // Stats
   totalSalesCount: number;
   totalRevenueEarned: number;
+  totalTipsEarned: number;
   totalCustomersServed: number;
   lastSavedTimestamp: number;
 
@@ -106,6 +110,7 @@ export interface GameState {
 
   // Customer Simulation
   customers: Customer[];
+  orders: Order[];
 
   // Reviews & Social Media
   reviews: Review[];
@@ -176,6 +181,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   totalSalesCount: 0,
   totalRevenueEarned: 0,
+  totalTipsEarned: 0,
   totalCustomersServed: 0,
   lastSavedTimestamp: Date.now(),
 
@@ -191,6 +197,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   foods: INITIAL_FOODS,
   employees: INITIAL_EMPLOYEES,
   customers: [],
+  orders: [],
 
   reviews: [
     {
@@ -316,11 +323,44 @@ export const useGameStore = create<GameState>((set, get) => ({
         const qualityBonus = readyJob.qualityScore ? Math.max(0.8, readyJob.qualityScore / 100) : 1;
 
         const earned = Math.round(earnedBase * prestigeBonus * eventRevenueMult * qualityBonus);
-        const xpGained = Math.round(earned * 1.2);
-        const newMoney = state.money + earned;
+        const now = Date.now();
+        const freshness = readyJob.freshness !== undefined ? readyJob.freshness : SatisfactionService.calculateFoodFreshness(readyJob.readyAt || now, now);
+        const temperature = readyJob.temperature !== undefined ? readyJob.temperature : SatisfactionService.calculateFoodTemperature(readyJob.readyAt || now, now);
+        const qualityScore = readyJob.qualityScore || 80;
+        const waitingTime = customer.waitingTime || Math.max(0, (customer.maxPatience || 20) - (customer.patience || 0));
+        const maxPatience = customer.maxPatience || 20;
+        const priceValueScore = SatisfactionService.calculatePriceValueScore(
+          earnedBase,
+          earnedBase,
+          qualityScore,
+          customer.priceSensitivity || 1.0
+        );
+
+        const satisfactionResult = SatisfactionService.calculateSatisfaction({
+          waitingTime,
+          maxPatience,
+          qualityScore,
+          freshness,
+          temperature,
+          orderAccuracy: 100,
+          priceValueScore,
+          basePrice: earnedBase,
+          foodName: recipe ? recipe.name : 'Khoai Tây Chiên',
+          customerName: customer.name,
+          customerAvatar: customer.avatar,
+          customerId: customer.id,
+          orderId: customer.orderId,
+          foodId: customer.orderedFoodId
+        });
+
+        const tipAmount = satisfactionResult.tipAmount;
+        const totalEarned = earned + tipAmount;
+        const xpGained = Math.round(totalEarned * 1.2);
+        const newMoney = state.money + totalEarned;
+        const newTips = state.totalTipsEarned + tipAmount;
         const newXp = state.xp + xpGained;
         const newSales = state.totalSalesCount + 1;
-        const newRevenue = state.totalRevenueEarned + earned;
+        const newRevenue = state.totalRevenueEarned + totalEarned;
         const newCustomersServed = state.totalCustomersServed + 1;
         const newLevel = Math.floor(Math.sqrt(newXp / 50)) + 1;
 
@@ -332,27 +372,35 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
 
         customers.splice(targetIdx, 1);
-        state.addFloatingText(`+ $${earned} 🍟`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
+        if (tipAmount > 0) {
+          state.addFloatingText(`+ $${earned} (+$${tipAmount} tip 💵)`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
+        } else {
+          state.addFloatingText(`+ $${earned} 🍟`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
+        }
 
         // Mark job as SERVED
         const updatedJobs = state.productionJobs.map((j, idx) => 
           idx === readyJobIdx ? { ...j, status: 'SERVED' as const } : j
         );
 
-        // Update reviews
-        let updatedReviews = state.reviews;
-        if (Math.random() < 0.35) {
-          const newReview: Review = {
-            id: `rev_${Date.now()}`,
-            customerName: customer.name,
-            avatar: customer.avatar,
-            stars: 5,
-            comment: recipe ? `Món ${recipe.name} giòn rụm đỉnh nóc kịch trần! 🔥` : GEN_Z_QUOTES[0],
-            timeAgo: 'Vừa xong',
-            foodName: recipe ? recipe.name : 'Khoai Tây Chiên'
-          };
-          updatedReviews = [newReview, ...state.reviews.slice(0, 8)];
-        }
+        // Update linked orders
+        const updatedOrders = state.orders.map(o => {
+          if (o.id === customer.orderId || o.customerId === customer.id || o.productionJobId === readyJob.id) {
+            return {
+              ...o,
+              status: 'SERVED' as const,
+              servedAt: now,
+              satisfactionScore: satisfactionResult.score,
+              tipAmount,
+              finalPrice: totalEarned,
+              reviewId: satisfactionResult.review.id
+            };
+          }
+          return o;
+        });
+
+        // Add review
+        const updatedReviews = [satisfactionResult.review, ...state.reviews.slice(0, 19)];
 
         // Quests & achievements
         const updatedQuests = state.quests.map(q => {
@@ -375,13 +423,15 @@ export const useGameStore = create<GameState>((set, get) => ({
           level: newLevel,
           totalSalesCount: newSales,
           totalRevenueEarned: newRevenue,
+          totalTipsEarned: newTips,
           totalCustomersServed: newCustomersServed,
           customers,
+          orders: updatedOrders,
           productionJobs: updatedJobs,
           reviews: updatedReviews,
           quests: updatedQuests,
           achievements: updatedAchievements,
-          reputation: Math.min(100, state.reputation + 0.3),
+          reputation: Math.min(100, Math.max(0, state.reputation + satisfactionResult.reputationDelta)),
           brandValue: state.brandValue + 2
         });
 
@@ -480,11 +530,42 @@ export const useGameStore = create<GameState>((set, get) => ({
     const eventRevenueMult = state.activeEvent?.multiplier.revenue || 1;
 
     const earned = Math.round(foodToServe.sellingPrice * prestigeBonus * eventRevenueMult);
-    const xpGained = Math.round(earned * 1.2);
-    const newMoney = state.money + earned;
+    const now = Date.now();
+    const waitingTime = customer.waitingTime || Math.max(0, (customer.maxPatience || 20) - (customer.patience || 0));
+    const maxPatience = customer.maxPatience || 20;
+    const qualityScore = Math.min(100, 75 + foodToServe.level * 5);
+    const priceValueScore = SatisfactionService.calculatePriceValueScore(
+      foodToServe.sellingPrice,
+      foodToServe.sellingPrice,
+      qualityScore,
+      customer.priceSensitivity || 1.0
+    );
+
+    const satisfactionResult = SatisfactionService.calculateSatisfaction({
+      waitingTime,
+      maxPatience,
+      qualityScore,
+      freshness: 100,
+      temperature: 100,
+      orderAccuracy: 100,
+      priceValueScore,
+      basePrice: foodToServe.sellingPrice,
+      foodName: foodToServe.name,
+      customerName: customer.name,
+      customerAvatar: customer.avatar,
+      customerId: customer.id,
+      orderId: customer.orderId,
+      foodId: foodToServe.id
+    });
+
+    const tipAmount = satisfactionResult.tipAmount;
+    const totalEarned = earned + tipAmount;
+    const xpGained = Math.round(totalEarned * 1.2);
+    const newMoney = state.money + totalEarned;
+    const newTips = state.totalTipsEarned + tipAmount;
     const newXp = state.xp + xpGained;
     const newSales = state.totalSalesCount + 1;
-    const newRevenue = state.totalRevenueEarned + earned;
+    const newRevenue = state.totalRevenueEarned + totalEarned;
     const newCustomersServed = state.totalCustomersServed + 1;
 
     const newLevel = Math.floor(Math.sqrt(newXp / 50)) + 1;
@@ -496,21 +577,28 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     customers.splice(targetIdx, 1);
-    state.addFloatingText(`+ $${earned} 💵`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
-
-    let updatedReviews = state.reviews;
-    if (Math.random() < 0.25) {
-      const newReview: Review = {
-        id: `rev_${Date.now()}`,
-        customerName: customer.name,
-        avatar: customer.avatar,
-        stars: 5,
-        comment: GEN_Z_QUOTES[Math.floor(Math.random() * GEN_Z_QUOTES.length)],
-        timeAgo: 'Vừa xong',
-        foodName: foodToServe.name
-      };
-      updatedReviews = [newReview, ...state.reviews.slice(0, 8)];
+    if (tipAmount > 0) {
+      state.addFloatingText(`+ $${earned} (+$${tipAmount} tip 💵)`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
+    } else {
+      state.addFloatingText(`+ $${earned} 💵`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
     }
+
+    const updatedOrders = state.orders.map(o => {
+      if (o.id === customer.orderId || o.customerId === customer.id) {
+        return {
+          ...o,
+          status: 'SERVED' as const,
+          servedAt: now,
+          satisfactionScore: satisfactionResult.score,
+          tipAmount,
+          finalPrice: totalEarned,
+          reviewId: satisfactionResult.review.id
+        };
+      }
+      return o;
+    });
+
+    const updatedReviews = [satisfactionResult.review, ...state.reviews.slice(0, 19)];
 
     const updatedQuests = state.quests.map(q => {
       if (q.id === 'q_first_sale') return { ...q, progress: Math.min(q.target, q.progress + 1), completed: true };
@@ -532,13 +620,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       level: newLevel,
       totalSalesCount: newSales,
       totalRevenueEarned: newRevenue,
+      totalTipsEarned: newTips,
       totalCustomersServed: newCustomersServed,
       ingredients: currentIngredients,
       customers,
+      orders: updatedOrders,
       reviews: updatedReviews,
       quests: updatedQuests,
       achievements: updatedAchievements,
-      reputation: Math.min(100, state.reputation + 0.2),
+      reputation: Math.min(100, Math.max(0, state.reputation + satisfactionResult.reputationDelta)),
       brandValue: state.brandValue + 2
     });
 
@@ -547,15 +637,30 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   // Main Simulation Loop (Called every second)
   tickSimulation: () => {
-    const state = get();
-    const currentTier = STORE_TIERS.find(t => t.id === state.currentTierId) || STORE_TIERS[0];
-
     // 0. Production Engine Tick (Process stations, cooking timers, equipment wear)
     get().processProduction(1);
 
     // 1. Employee automation
-    const hasCook = state.employees.some(e => e.role === 'cook' && e.hired);
-    const hasCashier = state.employees.some(e => e.role === 'cashier' && e.hired);
+    const stateBeforeAuto = get();
+    const hasCook = stateBeforeAuto.employees.some(e => e.role === 'cook' && e.hired);
+    const hasCashier = stateBeforeAuto.employees.some(e => e.role === 'cashier' && e.hired);
+
+    // Auto service if both cook and cashier are working
+    if (hasCook && hasCashier && stateBeforeAuto.customers.length > 0) {
+      // Cook speed bonus
+      const cook = stateBeforeAuto.employees.find(e => e.role === 'cook' && e.hired)!;
+      const speedUpgrade = stateBeforeAuto.upgrades.find(u => u.effectType === 'speed');
+      const speedMultiplier = 1 + (cook.speed / 100) + (speedUpgrade ? speedUpgrade.level * speedUpgrade.effectValue : 0);
+      
+      // Serve up to N customers depending on tier and speed
+      const customersToServeCount = Math.max(1, Math.floor(speedMultiplier * 0.8));
+      for (let i = 0; i < customersToServeCount; i++) {
+        get().manualCookAndServe();
+      }
+    }
+
+    const state = get();
+    const currentTier = STORE_TIERS.find(t => t.id === state.currentTierId) || STORE_TIERS[0];
 
     // Calculate total employee salary cost
     const hiredEmployees = state.employees.filter(e => e.hired);
@@ -566,21 +671,93 @@ export const useGameStore = create<GameState>((set, get) => ({
       updatedMoney = 0; // prevent extreme negative
     }
 
-    // Auto service if both cook and cashier are working
-    if (hasCook && hasCashier && state.customers.length > 0) {
-      // Cook speed bonus
-      const cook = state.employees.find(e => e.role === 'cook' && e.hired)!;
-      const speedUpgrade = state.upgrades.find(u => u.effectType === 'speed');
-      const speedMultiplier = 1 + (cook.speed / 100) + (speedUpgrade ? speedUpgrade.level * speedUpgrade.effectValue : 0);
-      
-      // Serve up to N customers depending on tier and speed
-      const customersToServeCount = Math.max(1, Math.floor(speedMultiplier * 0.8));
-      for (let i = 0; i < customersToServeCount; i++) {
-        get().manualCookAndServe();
+    // 2. Customer Waiting, Patience & Rage Quit
+    const activeCustomers: Customer[] = [];
+    let updatedOrders = [...state.orders];
+    let updatedJobs = [...state.productionJobs];
+    let updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
+    let updatedReviews = [...state.reviews];
+    let updatedReputation = state.reputation;
+
+    for (const c of state.customers) {
+      if (c.state === 'waiting') {
+        const maxPatience = c.maxPatience || 20;
+        const currentPatience = c.patience !== undefined ? c.patience : (c.currentWait !== undefined ? c.currentWait : 20);
+        const nextPatience = currentPatience - 1;
+        const nextWaiting = (c.waitingTime || 0) + 1;
+
+        if (nextPatience <= 0) {
+          // Customer rage quits!
+          updatedReputation = Math.max(0, updatedReputation - 1.0);
+
+          // Cancel linked order
+          if (c.orderId) {
+            const ord = updatedOrders.find(o => o.id === c.orderId || o.customerId === c.id);
+            if (ord) ord.status = 'CANCELLED';
+          }
+
+          // Cancel active / queued production jobs for this customer and clear from station
+          for (const j of updatedJobs) {
+            if ((j.orderId === c.id || j.orderId === c.orderId) && ['QUEUED', 'PREPARING', 'COOKING', 'ASSEMBLING', 'PACKING', 'READY'].includes(j.status)) {
+              j.status = 'CANCELLED';
+              for (const st of updatedStations) {
+                st.queue = st.queue.filter(id => id !== j.id);
+                if (st.activeJobId === j.id) {
+                  st.activeJobId = st.queue.length > 0 ? st.queue[0] : undefined;
+                }
+              }
+            }
+          }
+
+          // Add 1-star rage review
+          const chosenFood = state.foods.find(f => f.id === c.orderedFoodId || f.id === c.favoriteFoodId);
+          const rageReview: Review = {
+            id: `rev_${Date.now()}_rage_${c.id}`,
+            customerId: c.id,
+            orderId: c.orderId,
+            foodId: c.orderedFoodId,
+            customerName: c.name,
+            avatar: c.avatar,
+            stars: 1,
+            satisfactionScore: 10,
+            comment: `Chờ quá lâu không chịu nổi, phục vụ tệ hại! 😡 Bỏ về luôn!`,
+            timeAgo: 'Vừa xong',
+            foodName: chosenFood ? chosenFood.name : 'Món ăn',
+            tipAmount: 0,
+            createdAt: Date.now()
+          };
+          updatedReviews = [rageReview, ...updatedReviews.slice(0, 19)];
+          state.addFloatingText(`${c.name} bực bội bỏ về! (-1.0 ⭐)`, getSafeCenterX(), getSafeCenterY() - 30, 'text-rose-500 font-bold');
+          continue; // customer rage quits and leaves
+        }
+
+        // Calculate dynamic mood
+        const ratio = nextPatience / maxPatience;
+        let mood: CustomerMood = 'NEUTRAL';
+        if (ratio > 0.8) mood = 'DELIGHTED';
+        else if (ratio > 0.6) mood = 'HAPPY';
+        else if (ratio > 0.35) mood = 'NEUTRAL';
+        else if (ratio > 0.1) mood = 'IMPATIENT';
+        else mood = 'ANGRY';
+
+        activeCustomers.push({
+          ...c,
+          patience: nextPatience,
+          currentWait: nextPatience,
+          waitingTime: nextWaiting,
+          mood
+        });
+
+        if (c.orderId) {
+          const ord = updatedOrders.find(o => o.id === c.orderId || o.customerId === c.id);
+          if (ord) ord.waitingTime = nextWaiting;
+        }
+      } else {
+        activeCustomers.push(c);
       }
     }
 
-    // 2. Customer Spawning
+    // 3. Customer Spawning
     const trafficUpgrade = state.upgrades.find(u => u.effectType === 'traffic');
     const trafficBonus = trafficUpgrade ? 1 + trafficUpgrade.level * trafficUpgrade.effectValue : 1;
     const eventTrafficBonus = state.activeEvent?.multiplier.traffic || 1;
@@ -588,59 +765,69 @@ export const useGameStore = create<GameState>((set, get) => ({
     const prestigeBonus = prestigeTraffic ? 1 + prestigeTraffic.level * prestigeTraffic.effectMultiplier : 1;
 
     const baseSpawnChance = 0.45 * currentTier.trafficMultiplier * trafficBonus * eventTrafficBonus * prestigeBonus;
-    
-    let updatedCustomers = [...state.customers];
-
-    // Decrease patience of waiting customers
-    updatedCustomers = updatedCustomers.map(c => {
-      if (c.state === 'waiting') {
-        const nextWait = c.currentWait - 1;
-        if (nextWait <= 0) {
-          // Rage quit
-          return { ...c, state: 'rage_quit' as const };
-        }
-        return { ...c, currentWait: nextWait };
-      }
-      return c;
-    }).filter(c => c.state !== 'rage_quit'); // remove rage quitters
 
     // Check capacity
     const capacityUpgrade = state.upgrades.find(u => u.effectType === 'capacity');
     const extraCapacity = capacityUpgrade ? capacityUpgrade.level * capacityUpgrade.effectValue : 0;
     const maxCapacity = currentTier.maxCustomers + extraCapacity;
 
-    if (updatedCustomers.length < maxCapacity && Math.random() < baseSpawnChance) {
+    let newlySpawnedCustomer: Customer | null = null;
+    let newlySpawnedOrder: Order | null = null;
+
+    if (activeCustomers.length < maxCapacity && Math.random() < baseSpawnChance) {
       const archetype = ARCHETYPES[Math.floor(Math.random() * ARCHETYPES.length)];
       const unlockedFoods = state.foods.filter(f => f.isUnlocked);
       const chosenFood = unlockedFoods.length > 0 
         ? unlockedFoods[Math.floor(Math.random() * unlockedFoods.length)] 
         : state.foods[0];
 
-      const newCustomer: Customer = {
-        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      const basePatience = archetype === 'vip' ? 16 : archetype === 'office' ? 18 : archetype === 'foodie' ? 22 : 25;
+      const initialPatience = Math.floor(basePatience + Math.random() * 8);
+      const custId = `cust_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+      const ordId = `ord_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+      const priceSensitivity = archetype === 'student' ? 1.4 : archetype === 'vip' ? 0.7 : 1.0;
+      const qualitySensitivity = archetype === 'foodie' || archetype === 'influencer' ? 1.5 : 1.0;
+      const speedSensitivity = archetype === 'office' || archetype === 'vip' ? 1.5 : 1.0;
+
+      newlySpawnedCustomer = {
+        id: custId,
         name: CUSTOMER_NAMES[Math.floor(Math.random() * CUSTOMER_NAMES.length)],
         archetype,
         avatar: ARCHETYPE_AVATARS[archetype],
         budget: Math.floor(chosenFood.sellingPrice * (1.2 + Math.random() * 0.5)),
-        patience: Math.floor(15 + Math.random() * 10),
-        currentWait: Math.floor(15 + Math.random() * 10),
+        patience: initialPatience,
+        maxPatience: initialPatience,
+        waitingTime: 0,
+        mood: 'DELIGHTED',
         favoriteFoodId: chosenFood.id,
         orderedFoodId: chosenFood.id,
+        orderId: ordId,
         state: 'waiting',
         satisfaction: 5,
-        quote: GEN_Z_QUOTES[Math.floor(Math.random() * GEN_Z_QUOTES.length)]
+        quote: GEN_Z_QUOTES[Math.floor(Math.random() * GEN_Z_QUOTES.length)],
+        currentWait: initialPatience,
+        priceSensitivity,
+        qualitySensitivity,
+        speedSensitivity
       };
 
-      updatedCustomers.push(newCustomer);
+      newlySpawnedOrder = {
+        id: ordId,
+        customerId: custId,
+        foodId: chosenFood.id,
+        quantity: 1,
+        createdAt: Date.now(),
+        waitingTime: 0,
+        status: 'PENDING',
+        basePrice: chosenFood.sellingPrice
+      };
 
-      // Auto-enqueue production job if customer ordered a recipe supported by production engine
-      const matchingRecipe = getRecipeByFoodItemId(chosenFood.id);
-      if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
-        get().enqueueProductionJob(matchingRecipe.id, newCustomer.id);
-      }
+      activeCustomers.push(newlySpawnedCustomer);
+      updatedOrders.push(newlySpawnedOrder);
     }
 
-    // 3. Random Events Tick
+    // 4. Random Events Tick
     let currentEvent = state.activeEvent;
     if (currentEvent) {
       const remaining = currentEvent.remainingSec - 1;
@@ -661,7 +848,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
-    // 4. Auto save every 10 seconds
+    // 5. Auto save every 10 seconds
     const now = Date.now();
     if (now - state.lastSavedTimestamp >= 10000) {
       get().saveGame();
@@ -669,9 +856,22 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     set({
       money: updatedMoney,
-      customers: updatedCustomers,
+      customers: activeCustomers,
+      orders: updatedOrders,
+      productionJobs: updatedJobs,
+      stations: updatedStations,
+      reviews: updatedReviews,
+      reputation: updatedReputation,
       activeEvent: currentEvent
     });
+
+    // 6. Auto-enqueue production job if customer ordered a recipe supported by production engine
+    if (newlySpawnedCustomer && newlySpawnedOrder) {
+      const matchingRecipe = getRecipeByFoodItemId(newlySpawnedCustomer.orderedFoodId || '');
+      if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
+        get().enqueueProductionJob(matchingRecipe.id, newlySpawnedCustomer.id);
+      }
+    }
   },
 
   buyIngredient: (id: string, amount: number) => {
@@ -1077,6 +1277,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       prestigeUpgrades: state.prestigeUpgrades.reduce((acc, p) => ({ ...acc, [p.id]: p.level }), {}),
       totalSalesCount: state.totalSalesCount,
       totalRevenueEarned: state.totalRevenueEarned,
+      totalTipsEarned: state.totalTipsEarned,
       claimedQuests: state.quests.filter(q => q.claimed).map(q => q.id),
       unlockedAchievements: state.achievements.filter(a => a.unlocked).map(a => a.id),
       equipment: state.equipment,
@@ -1135,6 +1336,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       selectedSupplierId: saved.selectedSupplierId || 'cheap_market',
       totalSalesCount: (saved.totalSalesCount || 0) + offlineOrders,
       totalRevenueEarned: (saved.totalRevenueEarned || 0) + offlineEarnings,
+      totalTipsEarned: saved.totalTipsEarned || 0,
       totalCustomersServed: (state.totalCustomersServed || 0) + offlineOrders,
       ingredients: state.ingredients.map(i => ({
         ...i,
@@ -1378,10 +1580,23 @@ export const useGameStore = create<GameState>((set, get) => ({
       return s;
     });
 
+    const updatedOrders = state.orders.map(o => {
+      if (orderId && (o.id === orderId || o.customerId === orderId)) {
+        return {
+          ...o,
+          recipeId,
+          productionJobId: jobId,
+          status: 'PRODUCING' as const
+        };
+      }
+      return o;
+    });
+
     set({
       productionJobs: [...state.productionJobs, newJob],
       stations: updatedStations,
-      ingredients: currentIngredients
+      ingredients: currentIngredients,
+      orders: updatedOrders
     });
 
     return { success: true, jobId };
@@ -1469,8 +1684,12 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       const step = recipe.steps[job.currentStepIndex];
       if (!step) {
+        const readyTime = Date.now();
         job.status = 'READY';
-        job.completedAt = Date.now();
+        job.completedAt = readyTime;
+        job.readyAt = readyTime;
+        job.freshness = 100;
+        job.temperature = 100;
         station.activeJobId = undefined;
         station.queue = station.queue.filter(id => id !== job.id);
         continue;
@@ -1541,8 +1760,12 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         // Check if final step of the recipe
         if (job.currentStepIndex >= recipe.steps.length - 1) {
+          const readyTime = Date.now();
           job.status = 'READY';
-          job.completedAt = Date.now();
+          job.completedAt = readyTime;
+          job.readyAt = readyTime;
+          job.freshness = 100;
+          job.temperature = 100;
           job.qualityScore = Math.min(100, Math.max(60, Math.round(75 + employeeQuality * 1.2 + (equip.qualityMultiplier - 1) * 20)));
 
           // Remove from current station queue
@@ -1578,11 +1801,33 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
+    // Update freshness & temperature on all READY jobs
+    const now = Date.now();
+    for (const job of updatedJobs) {
+      if (job.status === 'READY') {
+        if (!job.readyAt) job.readyAt = now;
+        job.freshness = SatisfactionService.calculateFoodFreshness(job.readyAt, now);
+        job.temperature = SatisfactionService.calculateFoodTemperature(job.readyAt, now);
+      }
+    }
+
+    // Sync order statuses if jobs became READY
+    const updatedOrders = state.orders.map(order => {
+      if (order.status === 'PRODUCING' && order.productionJobId) {
+        const matchingJob = updatedJobs.find(j => j.id === order.productionJobId);
+        if (matchingJob && matchingJob.status === 'READY') {
+          return { ...order, status: 'READY' as const };
+        }
+      }
+      return order;
+    });
+
     set({
       stations: updatedStations,
       productionJobs: updatedJobs,
       ingredients: updatedIngredients,
-      equipment: updatedEquipment
+      equipment: updatedEquipment,
+      orders: updatedOrders
     });
   }
 }));
