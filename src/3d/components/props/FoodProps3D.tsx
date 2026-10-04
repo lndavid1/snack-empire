@@ -162,3 +162,52 @@ export const FoodTrayProp3D: React.FC<{
     </group>
   );
 };
+
+/**
+ * 6. Dirty Dishes / Leftover Tray Prop (Shown on tables that need cleaning)
+ */
+export const DirtyDishesProp3D: React.FC<{ 
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+  scale?: number;
+}> = ({ 
+  position = [0, 0, 0],
+  rotation = [0, 0, 0],
+  scale = 1 
+}) => {
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      {/* Used Tray Base */}
+      <mesh castShadow receiveShadow position={[0, 0, 0]}>
+        <boxGeometry args={[0.46, 0.02, 0.34]} />
+        <meshStandardMaterial color="#94a3b8" metalness={0.6} roughness={0.5} />
+      </mesh>
+
+      {/* Empty / Crushed Fries Box */}
+      <mesh position={[-0.06, 0.05, 0.02]} rotation={[0.15, 0.3, -0.2]} castShadow>
+        <boxGeometry args={[0.18, 0.08, 0.12]} />
+        <meshStandardMaterial color="#b91c1c" roughness={0.8} />
+      </mesh>
+
+      {/* Crumpled Napkin */}
+      <mesh position={[0.08, 0.03, -0.04]} rotation={[0.4, -0.5, 0.3]} castShadow>
+        <dodecahedronGeometry args={[0.045]} />
+        <meshStandardMaterial color="#e2e8f0" roughness={0.9} />
+      </mesh>
+
+      {/* Empty Used Paper Cup (Tilted) */}
+      <mesh position={[0.12, 0.06, 0.06]} rotation={[0.1, 0, 0.35]} castShadow>
+        <cylinderGeometry args={[0.038, 0.028, 0.1, 10]} />
+        <meshStandardMaterial color="#cbd5e1" roughness={0.7} />
+      </mesh>
+
+      {/* Little leftover food crumbs */}
+      {[-0.02, 0.03, -0.09].map((cx, i) => (
+        <mesh key={i} position={[cx, 0.015, (i * 0.04) - 0.05]} castShadow>
+          <sphereGeometry args={[0.01, 6, 6]} />
+          <meshStandardMaterial color="#ca8a04" roughness={0.9} />
+        </mesh>
+      ))}
+    </group>
+  );
+};

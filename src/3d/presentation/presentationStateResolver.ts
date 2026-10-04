@@ -46,6 +46,13 @@ export function resolveEmployeePresentationState({
   }
 
   // 2. Arrived at physical destination: execute role/step action
+  if (employee.cleaningTableId) {
+    return {
+      action: 'CLEANING',
+      progress: 50,
+    };
+  }
+
   if (employee.workState === 'WORKING') {
     if (activeJob) {
       const status = activeJob.status;
@@ -82,7 +89,7 @@ export function resolveEmployeePresentationState({
           action: 'CARRYING',
           activeJobId: activeJob.id,
           recipeName: activeJob.recipeName,
-          carryingProp: 'fries_box',
+          carryingProp: 'food_tray',
           progress: 100,
         };
       }
@@ -98,7 +105,7 @@ export function resolveEmployeePresentationState({
   if (employee.workState === 'SERVING') {
     return {
       action: 'SERVING',
-      carryingProp: 'fries_box',
+      carryingProp: employee.servingStep === 'DELIVERING' ? 'food_tray' : 'fries_box',
       progress: 100,
     };
   }

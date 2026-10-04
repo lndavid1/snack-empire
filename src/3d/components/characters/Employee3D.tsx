@@ -144,6 +144,18 @@ export const Employee3D: React.FC<Employee3DProps> = ({
       if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
       if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
       if (bodyRef.current) bodyRef.current.rotation.x = 0.05;
+    } else if (action === 'CLEANING') {
+      // Wiping motion with cloth/sponge
+      const wipeX = Math.sin(time * 10) * 0.35;
+      const wipeZ = Math.cos(time * 10) * 0.25;
+      if (rightArmRef.current) {
+        rightArmRef.current.rotation.x = 0.6 + wipeZ;
+        rightArmRef.current.rotation.z = -0.2 + wipeX;
+      }
+      if (leftArmRef.current) leftArmRef.current.rotation.x = 0.2;
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
+      if (bodyRef.current) bodyRef.current.rotation.x = 0.15; // Leaning over table
     } else {
       // IDLE breathing
       if (leftArmRef.current) leftArmRef.current.rotation.x = 0;
@@ -176,6 +188,9 @@ export const Employee3D: React.FC<Employee3DProps> = ({
   } else if (action === 'SERVING') {
     actionBadge = '🎁 Giao khách';
     badgeStyle = 'bg-emerald-500/30 text-emerald-300 border-emerald-500/50';
+  } else if (action === 'CLEANING') {
+    actionBadge = '🧽 Dọn dẹp bàn';
+    badgeStyle = 'bg-cyan-500/30 text-cyan-300 border-cyan-500/50';
   } else if (action === 'WALKING') {
     actionBadge = '🚶 Di chuyển';
     badgeStyle = 'bg-slate-700/40 text-slate-300 border-slate-600/40';
@@ -279,6 +294,14 @@ export const Employee3D: React.FC<Employee3DProps> = ({
         <mesh position={[0.28, 0.62, 0.22]} rotation={[0.5, 0, 0]} castShadow>
           <boxGeometry args={[0.04, 0.25, 0.02]} />
           <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
+        </mesh>
+      )}
+
+      {/* Cleaning Cloth / Sponge Prop in Hand when CLEANING */}
+      {action === 'CLEANING' && (
+        <mesh position={[0.26, 0.55, 0.25]} rotation={[0.2, 0.3, 0]} castShadow>
+          <boxGeometry args={[0.12, 0.04, 0.16]} />
+          <meshStandardMaterial color="#38bdf8" roughness={0.9} />
         </mesh>
       )}
 

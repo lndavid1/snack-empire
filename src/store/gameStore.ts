@@ -21,7 +21,8 @@ import {
   Order,
   CustomerMood,
   EmployeeLogEvent,
-  StaffSlot
+  StaffSlot,
+  DiningTableState
 } from '../types/game';
 import {
   STORE_TIERS,
@@ -45,6 +46,15 @@ import { EmployeeWorkflowService } from '../services/employeeWorkflow';
 import { sound } from '../services/sound';
 import { StorageService, SaveData } from '../services/storage';
 import { DINING_TABLES_LAYOUT } from '../3d/config/restaurantLayout';
+
+const INITIAL_TABLE_STATES: Record<string, DiningTableState> = DINING_TABLES_LAYOUT.reduce((acc, t) => {
+  acc[t.id] = {
+    tableId: t.id,
+    status: 'CLEAN',
+    cleanedProgress: 100,
+  };
+  return acc;
+}, {} as Record<string, DiningTableState>);
 
 const CUSTOMER_NAMES = [
   'Minh', 'Hương', 'Đức', 'Linh', 'Khánh', 'Tuấn', 'Trang', 'Bảo', 'Hoàng', 'My',
@@ -185,6 +195,9 @@ export interface GameState {
   hireEmployeeIntoSlot: (slotId: string, employeeId: string) => boolean;
   fireEmployee: (employeeId: string) => boolean;
   checkStaffSlotUnlocks: () => StaffSlot[];
+  // Physical Restaurant & Dining Table Cleanliness
+  tableStates: Record<string, DiningTableState>;
+  cleanTable: (tableId: string) => boolean;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -216,6 +229,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     ...CANDIDATE_POOL.filter(c => !INITIAL_EMPLOYEES.some(e => e.id === c.id))
   ],
   staffSlots: getDefaultStaffSlots(),
+  tableStates: INITIAL_TABLE_STATES,
   customers: [],
   orders: [],
 
@@ -311,16 +325,28 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (customers.length === 0) return false;
 
     // 1. Check if there is an existing READY job that can be served
-    const readyJobIdx = state.productionJobs.findIndex(j => 
-      j.status === 'READY' && (!customerId || j.orderId === customerId)
-    );
+    const readyJobIdx = state.productionJobs.findIndex(j => {
+      if (j.status !== 'READY') return false;
+      if (!customerId) return true;
+      if (j.orderId === customerId) return true;
+      const targetCust = customers.find(c => c.id === customerId);
+      if (targetCust) {
+        if (targetCust.orderId && j.orderId === targetCust.orderId) return true;
+        const matchRecipe = getRecipeByFoodItemId(targetCust.orderedFoodId || '');
+        if (matchRecipe && matchRecipe.id === j.recipeId) return true;
+      }
+      return false;
+    });
 
     if (readyJobIdx !== -1) {
       const readyJob = state.productionJobs[readyJobIdx];
       // Find matching customer
       let targetIdx = -1;
-      if (readyJob.orderId) {
-        targetIdx = customers.findIndex(c => c.id === readyJob.orderId && c.state === 'waiting');
+      if (customerId) {
+        targetIdx = customers.findIndex(c => c.id === customerId && c.state === 'waiting');
+      }
+      if (targetIdx === -1 && readyJob.orderId) {
+        targetIdx = customers.findIndex(c => (c.id === readyJob.orderId || c.orderId === readyJob.orderId) && c.state === 'waiting');
       }
       if (targetIdx === -1) {
         // Fallback: match by ordered food or first waiting customer
@@ -700,7 +726,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     let assignedSeatId = 'seat_01_1';
     let seatFound = false;
 
+    // First pass: prioritize vacant seat at a CLEAN table
     for (const table of DINING_TABLES_LAYOUT) {
+      const tableState = state.tableStates ? state.tableStates[table.id] : undefined;
+      if (tableState && tableState.status !== 'CLEAN') continue;
+
       for (const seat of table.seats) {
         if (!occupiedSeats.has(seat.id)) {
           assignedTableId = table.id;
@@ -710,6 +740,21 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
       }
       if (seatFound) break;
+    }
+
+    // Fallback pass if all clean tables are occupied: any vacant seat
+    if (!seatFound) {
+      for (const table of DINING_TABLES_LAYOUT) {
+        for (const seat of table.seats) {
+          if (!occupiedSeats.has(seat.id)) {
+            assignedTableId = table.id;
+            assignedSeatId = seat.id;
+            seatFound = true;
+            break;
+          }
+        }
+        if (seatFound) break;
+      }
     }
 
     const foodObj = state.foods.find(f => f.id === foodId);
@@ -776,6 +821,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     let updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
     let updatedReviews = [...state.reviews];
     let updatedReputation = state.reputation;
+    const updatedTableStates: Record<string, DiningTableState> = { ...(state.tableStates || INITIAL_TABLE_STATES) };
 
     for (const c of state.customers) {
       if (c.state === 'waiting') {
@@ -853,7 +899,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       } else if (c.state === 'eating') {
         const nextEatingTime = (c.eatingTime || 0) + 1;
         if (nextEatingTime >= 4) {
-          // Finished meal! Leave table and head to exit
+          // Finished meal! Mark dining table as DIRTY if customer was seated at a table
+          if (c.tableId && updatedTableStates[c.tableId]) {
+            updatedTableStates[c.tableId] = {
+              tableId: c.tableId,
+              status: 'DIRTY',
+              cleanedProgress: 0,
+              dirtyAt: Date.now()
+            };
+          }
+          // Leave table and head to exit
           activeCustomers.push({
             ...c,
             state: 'leaving',
@@ -988,6 +1043,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       stations: updatedStations,
       reviews: updatedReviews,
       reputation: updatedReputation,
+      tableStates: updatedTableStates,
       activeEvent: currentEvent
     });
 
@@ -2223,9 +2279,27 @@ export const useGameStore = create<GameState>((set, get) => ({
     let updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
     let updatedOrders = state.orders.map(o => ({ ...o }));
     let updatedLogs = [...state.employeeLogs];
+    const updatedTableStates: Record<string, DiningTableState> = { ...(state.tableStates || INITIAL_TABLE_STATES) };
 
     for (const emp of updatedEmployees) {
       if (!emp.hired) continue;
+
+      // Serving timer: return to IDLE after completing physical delivery
+      if (emp.workState === 'SERVING') {
+        const remainingTimer = (emp.servingTimer || 1) - deltaSeconds;
+        if (remainingTimer <= 0) {
+          emp.workState = 'IDLE';
+          emp.servingStep = undefined;
+          emp.targetTableId = undefined;
+          emp.targetCustomerId = undefined;
+          emp.servingTimer = 0;
+          emp.currentLocation = emp.role === 'server' ? 'SERVICE_AREA' : 'STATION';
+          continue;
+        } else {
+          emp.servingTimer = remainingTimer;
+          continue;
+        }
+      }
 
       // 1. Resting Employees Recovery
       if (emp.workState === 'RESTING') {
@@ -2306,7 +2380,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       // 2B. Server Delivery & Service Workers (Server picks up READY food from counter, brings to customer table)
-      if (EmployeeWorkflowService.isServiceWorker(emp) && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
+      const hasAvailableDedicatedServer = updatedEmployees.some(e => e.hired && e.role === 'server' && e.workState !== 'RESTING');
+      const canServe = emp.role === 'server' || (!hasAvailableDedicatedServer && EmployeeWorkflowService.isServiceWorker(emp));
+
+      if (canServe && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
         const readyJobs = updatedJobs.filter(j => j.status === 'READY');
         if (readyJobs.length > 0 && state.customers.some(c => c.state === 'waiting')) {
           const candidates: { job: ProductionJob; customer: Customer; priority: number }[] = [];
@@ -2338,8 +2415,12 @@ export const useGameStore = create<GameState>((set, get) => ({
             const best = candidates[0];
 
             emp.workState = 'SERVING';
-            emp.currentLocation = 'SERVICE_AREA';
             emp.currentOrderId = best.customer.orderId;
+            emp.targetCustomerId = best.customer.id;
+            emp.targetTableId = best.customer.tableId;
+            emp.servingStep = 'DELIVERING';
+            emp.servingTimer = 2; // Visibly walk and carry platter to table
+            emp.currentLocation = 'DINING_AREA';
 
             // If employee is dedicated server or customer was seated at a table, transition customer to eating at table
             const isDedicatedServer = emp.role === 'server';
@@ -2356,8 +2437,6 @@ export const useGameStore = create<GameState>((set, get) => ({
             updatedStations = freshState.stations.map(s => ({ ...s, queue: [...s.queue] }));
 
             emp.stamina = EmployeeWorkflowService.updateStamina(emp.stamina ?? 100, true, deltaSeconds, emp.archetype);
-            emp.workState = 'IDLE';
-            emp.currentOrderId = undefined;
 
             const foodObj = state.foods.find(f => f.id === best.customer.orderedFoodId);
             const tableName = best.customer.tableId 
@@ -2376,6 +2455,71 @@ export const useGameStore = create<GameState>((set, get) => ({
               type: 'serve'
             };
             updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
+            continue;
+          }
+        }
+      }
+
+      // 2C. Table Cleaning (Cleaner or idle Server cleans dirty tables after customers finish eating)
+      if (
+        (emp.role === 'cleaner' || emp.role === 'server') &&
+        (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || emp.cleaningTableId)
+      ) {
+        if (emp.cleaningTableId) {
+          const tableState = updatedTableStates[emp.cleaningTableId];
+          if (tableState && (tableState.status === 'BEING_CLEANED' || tableState.status === 'DIRTY')) {
+            const cleanSpeed = emp.role === 'cleaner' ? 1.5 : 1.0;
+            const progressIncrease = deltaSeconds * 40 * cleanSpeed;
+            const nextProgress = (tableState.cleanedProgress || 0) + progressIncrease;
+
+            if (nextProgress >= 100) {
+              updatedTableStates[emp.cleaningTableId] = {
+                tableId: emp.cleaningTableId,
+                status: 'CLEAN',
+                cleanedProgress: 100,
+                cleanerEmployeeId: undefined
+              };
+              const cleanedTableName = DINING_TABLES_LAYOUT.find(t => t.id === emp.cleaningTableId)?.name || emp.cleaningTableId;
+              emp.cleaningTableId = undefined;
+              emp.cleaningTimer = 0;
+              emp.workState = 'IDLE';
+              emp.currentLocation = emp.role === 'cleaner' ? 'STORAGE' : 'SERVICE_AREA';
+
+              const newLog: EmployeeLogEvent = {
+                id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                timestamp: Date.now(),
+                employeeId: emp.id,
+                employeeName: emp.name,
+                message: `${emp.name} đã dọn dẹp và lau sạch bóng ${cleanedTableName}! ✨🧽`,
+                type: 'clean'
+              };
+              updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
+              continue;
+            } else {
+              tableState.status = 'BEING_CLEANED';
+              tableState.cleanedProgress = Math.min(99, nextProgress);
+              emp.workState = 'WORKING';
+              emp.currentLocation = 'DINING_AREA';
+              continue;
+            }
+          } else {
+            emp.cleaningTableId = undefined;
+            emp.workState = 'IDLE';
+          }
+        }
+
+        // Search for dirty tables that need a cleaner
+        const readyJobsExist = updatedJobs.some(j => j.status === 'READY');
+        if (emp.role === 'cleaner' || !readyJobsExist) {
+          const dirtyTable = Object.values(updatedTableStates).find(t => t.status === 'DIRTY' && !t.cleanerEmployeeId);
+          if (dirtyTable) {
+            dirtyTable.status = 'BEING_CLEANED';
+            dirtyTable.cleanerEmployeeId = emp.id;
+            dirtyTable.cleanedProgress = 10;
+            emp.cleaningTableId = dirtyTable.tableId;
+            emp.cleaningTimer = 0;
+            emp.workState = 'WORKING';
+            emp.currentLocation = 'DINING_AREA';
             continue;
           }
         }
@@ -2450,8 +2594,47 @@ export const useGameStore = create<GameState>((set, get) => ({
       employees: updatedEmployees,
       productionJobs: updatedJobs,
       stations: updatedStations,
+      tableStates: updatedTableStates,
       employeeLogs: updatedLogs
     });
+  },
+
+  cleanTable: (tableId: string) => {
+    const state = get();
+    const currentTable = state.tableStates ? state.tableStates[tableId] : undefined;
+    if (!currentTable || currentTable.status === 'CLEAN') return false;
+
+    const updatedTableStates = {
+      ...state.tableStates,
+      [tableId]: {
+        tableId,
+        status: 'CLEAN' as const,
+        cleanedProgress: 100,
+        cleanerEmployeeId: undefined,
+      }
+    };
+
+    const updatedEmployees = state.employees.map(emp => {
+      if (emp.cleaningTableId === tableId) {
+        return {
+          ...emp,
+          cleaningTableId: undefined,
+          cleaningTimer: 0,
+          workState: 'IDLE' as const,
+        };
+      }
+      return emp;
+    });
+
+    sound.playClick();
+    const tableName = DINING_TABLES_LAYOUT.find(t => t.id === tableId)?.name || tableId;
+    state.addFloatingText(`✨ Đã dọn ${tableName}!`, getSafeCenterX(), getSafeCenterY() - 40, 'text-cyan-300 font-bold');
+
+    set({
+      tableStates: updatedTableStates,
+      employees: updatedEmployees,
+    });
+    return true;
   }
 }));
 

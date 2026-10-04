@@ -103,7 +103,9 @@ export type EmployeeLocation =
   | 'STATION'
   | 'SERVICE_AREA'
   | 'REST_AREA'
-  | 'IDLE_AREA';
+  | 'IDLE_AREA'
+  | 'DINING_AREA'
+  | 'STORAGE';
 
 export type EmployeeArchetype =
   | 'FAST'
@@ -144,7 +146,7 @@ export interface EmployeeLogEvent {
   employeeId: string;
   employeeName: string;
   message: string;
-  type: 'work' | 'serve' | 'rest' | 'mistake';
+  type: 'work' | 'serve' | 'rest' | 'mistake' | 'clean';
 }
 
 export interface Employee {
@@ -172,6 +174,23 @@ export interface Employee {
   currentTaskId?: string;
   currentProductionJobId?: string;
   currentOrderId?: string;
+  // Phase 7+: Multi-Step Serving & Table Cleaning
+  servingStep?: 'PICKING_UP' | 'DELIVERING';
+  targetTableId?: string;
+  targetCustomerId?: string;
+  servingTimer?: number;
+  cleaningTableId?: string;
+  cleaningTimer?: number;
+}
+
+export type TableCleanlinessState = 'CLEAN' | 'DIRTY' | 'BEING_CLEANED';
+
+export interface DiningTableState {
+  tableId: string;
+  status: TableCleanlinessState;
+  cleanedProgress?: number; // 0 to 100
+  dirtyAt?: number;
+  cleanerEmployeeId?: string;
 }
 
 // ----------------------------------------------------

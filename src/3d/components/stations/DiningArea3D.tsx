@@ -1,23 +1,33 @@
 import React from 'react';
+import { Html } from '@react-three/drei';
 import { DINING_TABLES_LAYOUT } from '../../config/restaurantLayout';
 import type { DiningTableLayout, DiningSeatLayout, Customer3DState } from '../../types/sceneTypes';
-import { FoodTrayProp3D } from '../props/FoodProps3D';
+import type { DiningTableState } from '../../../types/game';
+import { FoodTrayProp3D, DirtyDishesProp3D } from '../props/FoodProps3D';
 
 interface DiningArea3DProps {
   customers?: Customer3DState[];
+  tableStates?: Record<string, DiningTableState>;
   onSelectTable?: (table: DiningTableLayout) => void;
   onSelectSeat?: (seat: DiningSeatLayout) => void;
+  onCleanTable?: (tableId: string) => void;
 }
 
 export const DiningArea3D: React.FC<DiningArea3DProps> = ({
   customers = [],
+  tableStates = {},
   onSelectTable,
   onSelectSeat,
+  onCleanTable,
 }) => {
   return (
     <group>
       {DINING_TABLES_LAYOUT.map(table => {
         const [tx, ty, tz] = table.position;
+        const tState = tableStates[table.id];
+        const isDirty = tState?.status === 'DIRTY';
+        const isBeingCleaned = tState?.status === 'BEING_CLEANED';
+
         const hasEatingCustomer = customers.some(c => 
           c.state === 'eating' && (
             Math.hypot(c.currentPosition[0] - tx, c.currentPosition[2] - tz) < 1.8 ||
@@ -31,18 +41,45 @@ export const DiningArea3D: React.FC<DiningArea3DProps> = ({
             position={[tx, ty, tz]}
             onClick={(e) => {
               e.stopPropagation();
-              onSelectTable?.(table);
+              if (isDirty && onCleanTable) {
+                onCleanTable(table.id);
+              } else {
+                onSelectTable?.(table);
+              }
             }}
           >
             {/* Table Top (Warm solid walnut slab with beveled edges) */}
             <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
               <boxGeometry args={[1.5, 0.08, 1.2]} />
-              <meshStandardMaterial color="#44403c" roughness={0.4} metalness={0.05} />
+              <meshStandardMaterial color={isDirty ? "#292524" : "#44403c"} roughness={isDirty ? 0.8 : 0.4} metalness={0.05} />
             </mesh>
 
             {/* Render Food Tray on table if customer is eating here */}
-            {hasEatingCustomer && (
+            {hasEatingCustomer && !isDirty && (
               <FoodTrayProp3D position={[0, 0.79, 0]} scale={1.0} />
+            )}
+
+            {/* Render Dirty Dishes & Leftovers when table needs cleaning */}
+            {(isDirty || isBeingCleaned) && (
+              <>
+                <DirtyDishesProp3D position={[0, 0.79, 0]} scale={1.0} />
+                <Html position={[0, 1.25, 0]} center distanceFactor={14}>
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCleanTable?.(table.id);
+                    }}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-black shadow-lg flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all active:scale-95 ${
+                      isBeingCleaned 
+                        ? 'bg-sky-950/90 text-sky-300 border border-sky-500/50 animate-pulse' 
+                        : 'bg-amber-950/90 text-amber-300 border border-amber-500/50 hover:bg-amber-900'
+                    }`}
+                  >
+                    <span>{isBeingCleaned ? '🧽' : '🧹'}</span>
+                    <span>{isBeingCleaned ? 'Đang lau dọn...' : 'Bàn bẩn (Dọn)'}</span>
+                  </div>
+                </Html>
+              </>
             )}
 
             {/* Table Frame & 4 Matte Black Metal Legs */}
@@ -54,7 +91,7 @@ export const DiningArea3D: React.FC<DiningArea3DProps> = ({
             ))}
 
             {/* Tabletop Center Condiment / Napkin Caddy */}
-            {!hasEatingCustomer && (
+            {!hasEatingCustomer && !isDirty && !isBeingCleaned && (
               <group position={[0, 0.82, 0]}>
                 <mesh castShadow>
                   <boxGeometry args={[0.2, 0.1, 0.16]} />

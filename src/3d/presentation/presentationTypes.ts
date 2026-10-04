@@ -10,7 +10,8 @@ export type CharacterAction =
   | 'CARRYING'
   | 'SERVING'
   | 'EATING'
-  | 'WAITING';
+  | 'WAITING'
+  | 'CLEANING';
 
 export type StationAction =
   | 'IDLE'

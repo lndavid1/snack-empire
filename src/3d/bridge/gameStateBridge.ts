@@ -95,7 +95,10 @@ export function mapEmployeesTo3D(
 
     let targetPos: Vector3Tuple;
 
-    if (workState === 'WORKING') {
+    if (emp.cleaningTableId) {
+      const table = DINING_TABLES_LAYOUT.find(t => t.id === emp.cleaningTableId);
+      targetPos = table ? table.servicePoint : [RESTAURANT_LAYOUT.staff.idleArea[0] + (index * 0.7), 0, RESTAURANT_LAYOUT.staff.idleArea[2]];
+    } else if (workState === 'WORKING') {
       const assignedStation = stations.find(s => s.id === emp.assignedStationId || s.activeJobId === emp.currentProductionJobId);
       if (assignedStation) {
         const layoutConfig = (RESTAURANT_LAYOUT.stations as Record<string, { position: Vector3Tuple; workerOffset: Vector3Tuple }>)[assignedStation.stationType];
@@ -112,9 +115,14 @@ export function mapEmployeesTo3D(
         targetPos = [RESTAURANT_LAYOUT.staff.idleArea[0] + (index * 0.7), 0, RESTAURANT_LAYOUT.staff.idleArea[2]];
       }
     } else if (workState === 'SERVING') {
-      targetPos = emp.role === 'server'
-        ? [6.8, 0, 0.4] // Waiter pickup position at counter
-        : RESTAURANT_LAYOUT.serviceCounter.cashierPosition;
+      if (emp.servingStep === 'DELIVERING' && emp.targetTableId) {
+        const table = DINING_TABLES_LAYOUT.find(t => t.id === emp.targetTableId);
+        targetPos = table ? table.servicePoint : (emp.role === 'server' ? [6.8, 0, 0.4] : RESTAURANT_LAYOUT.serviceCounter.cashierPosition);
+      } else {
+        targetPos = emp.role === 'server'
+          ? [6.8, 0, 0.4] // Waiter pickup position at counter
+          : RESTAURANT_LAYOUT.serviceCounter.cashierPosition;
+      }
     } else if (workState === 'RESTING') {
       targetPos = [
         RESTAURANT_LAYOUT.staff.restArea[0] + (index * 0.6),
@@ -129,6 +137,8 @@ export function mapEmployeesTo3D(
         targetPos = RESTAURANT_LAYOUT.serviceCounter.cashierPosition;
       } else if (emp.role === 'server') {
         targetPos = [6.0, 0, 0.4]; // Server staging near pickup counter
+      } else if (emp.role === 'cleaner') {
+        targetPos = [4.5, 0, -3.5]; // Cleaner standby position near cleaning cart
       } else {
         targetPos = [
           RESTAURANT_LAYOUT.staff.idleArea[0] + (index * 0.8),
@@ -151,6 +161,9 @@ export function mapEmployeesTo3D(
       targetPosition: targetPos,
       assignedStationId: emp.assignedStationId,
       currentJobId: emp.currentProductionJobId,
+      servingStep: emp.servingStep,
+      targetTableId: emp.targetTableId,
+      cleaningTableId: emp.cleaningTableId,
       color,
     };
   });

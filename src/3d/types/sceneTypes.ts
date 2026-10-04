@@ -46,6 +46,9 @@ export interface Employee3DState {
   targetPosition: Vector3Tuple;
   assignedStationId?: string;
   currentJobId?: string;
+  servingStep?: 'PICKING_UP' | 'DELIVERING';
+  targetTableId?: string;
+  cleaningTableId?: string;
   color: string;
 }
 

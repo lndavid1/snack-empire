@@ -72,13 +72,37 @@ export function resolveEmployeeDestination(
   }
 
   if (workState === 'SERVING') {
-    // Service counter server point
+    // If delivering to a table, route to table service point
+    if (employee.servingStep === 'DELIVERING' && employee.targetTableId) {
+      const table = DINING_TABLES_LAYOUT.find(t => t.id === employee.targetTableId);
+      if (table) {
+        return {
+          targetPosition: table.servicePoint,
+          interactionPointId: `point_service_${table.id}`,
+          reason: `DELIVERING food to ${table.name}`,
+        };
+      }
+    }
+
+    // Service counter server point for picking up food
     const serverPoint = INTERACTION_POINTS.find(p => p.id === 'point_pickup_server');
     return {
       targetPosition: serverPoint ? serverPoint.position : RESTAURANT_LAYOUT.serviceCounter.cashierPosition,
       interactionPointId: serverPoint?.id,
-      reason: 'SERVING food at counter',
+      reason: 'SERVING (picking up food at counter)',
     };
+  }
+
+  // Check if cleaning a table
+  if (employee.cleaningTableId) {
+    const table = DINING_TABLES_LAYOUT.find(t => t.id === employee.cleaningTableId);
+    if (table) {
+      return {
+        targetPosition: table.servicePoint,
+        interactionPointId: `point_clean_${table.id}`,
+        reason: `CLEANING ${table.name}`,
+      };
+    }
   }
 
   if (workState === 'RESTING') {
@@ -114,6 +138,15 @@ export function resolveEmployeeDestination(
       targetPosition: serverPoint ? serverPoint.position : [6.8, 0, -2.0],
       interactionPointId: serverPoint?.id,
       reason: 'IDLE (waiting for ready food at counter)',
+    };
+  }
+
+  if (employee.role === 'cleaner') {
+    const restPoint = INTERACTION_POINTS.find(p => p.id === 'point_rest_stand');
+    return {
+      targetPosition: restPoint ? restPoint.position : [4.5, 0, -3.5],
+      interactionPointId: restPoint?.id,
+      reason: 'IDLE (cleaner on standby)',
     };
   }
 

@@ -21,7 +21,8 @@ describe('Snack Empire: Automated Restaurant Service Loop & Waitstaff Tests', ()
       customers: [],
       orders: [],
       productionJobs: [],
-      employeeLogs: []
+      employeeLogs: [],
+      tableStates: {}
     });
   });
 
@@ -408,5 +409,197 @@ describe('Snack Empire: Automated Restaurant Service Loop & Waitstaff Tests', ()
     expect(['eating', 'leaving'].includes(servedCust.state)).toBe(true);
     // Revenue was earned
     expect(state.totalRevenueEarned).toBeGreaterThan(0);
+  });
+
+  it('server visibly holds SERVING state and targets customer table during delivery', () => {
+    const server: Employee = {
+      id: 'emp_server_hoa',
+      name: 'Hoa Nhanh Nhẹn',
+      role: 'server',
+      avatar: '💁',
+      level: 1,
+      speed: 15,
+      quality: 10,
+      salaryPerSec: 0.6,
+      hired: true,
+      hireCost: 150,
+      upgradeCost: 90,
+      mood: 100,
+      catchphrase: 'Phục vụ tận bàn!',
+      stamina: 100,
+      workState: 'IDLE'
+    };
+
+    const customer: Customer = {
+      id: 'cust_delivery_target',
+      name: 'Thanh',
+      archetype: 'gamer',
+      avatar: '🎮',
+      budget: 50,
+      patience: 25,
+      maxPatience: 25,
+      waitingTime: 4,
+      favoriteFoodId: 'food_fries',
+      orderedFoodId: 'food_fries',
+      orderId: 'ord_delivery',
+      state: 'waiting',
+      isOrdered: true,
+      tableId: 'table_02',
+      seatId: 'seat_02_1',
+      satisfaction: 5,
+      quote: 'Giao bàn 2 nhé!'
+    };
+
+    const readyJob: ProductionJob = {
+      id: 'job_delivery_fries',
+      orderId: 'cust_delivery_target',
+      recipeId: 'recipe_french_fries',
+      stationId: 'starter_packing_station',
+      status: 'READY',
+      currentStepIndex: 3,
+      progress: 100,
+      readyAt: Date.now() - 1000
+    };
+
+    useGameStore.setState({
+      employees: [server],
+      customers: [customer],
+      orders: [{
+        id: 'ord_delivery',
+        customerId: 'cust_delivery_target',
+        foodId: 'food_fries',
+        quantity: 1,
+        createdAt: Date.now() - 4000,
+        waitingTime: 4,
+        status: 'READY',
+        basePrice: 15
+      }],
+      productionJobs: [readyJob]
+    });
+
+    // Run employee processing tick
+    useGameStore.getState().processEmployees(1);
+
+    const stateAfterServe = useGameStore.getState();
+    const activeServer = stateAfterServe.employees.find(e => e.id === 'emp_server_hoa')!;
+
+    // Server should be visibly in SERVING state with DELIVERING step and target table
+    expect(activeServer.workState).toBe('SERVING');
+    expect(activeServer.servingStep).toBe('DELIVERING');
+    expect(activeServer.targetTableId).toBe('table_02');
+    expect(activeServer.currentLocation).toBe('DINING_AREA');
+
+    // Customer is now eating at table_02
+    const eatingCust = stateAfterServe.customers.find(c => c.id === 'cust_delivery_target')!;
+    expect(eatingCust.state).toBe('eating');
+    expect(eatingCust.tableId).toBe('table_02');
+
+    // On subsequent tick when serving timer completes, server returns to IDLE
+    useGameStore.getState().processEmployees(2);
+    const idleServer = useGameStore.getState().employees.find(e => e.id === 'emp_server_hoa')!;
+    expect(idleServer.workState).toBe('IDLE');
+  });
+
+  it('dining table transitions to DIRTY after eating customer leaves', () => {
+    const customer: Customer = {
+      id: 'cust_dirty_table_test',
+      name: 'Vũ',
+      archetype: 'foodie',
+      avatar: '🍜',
+      budget: 50,
+      patience: 25,
+      favoriteFoodId: 'food_fries',
+      state: 'eating',
+      eatingTime: 3, // almost finished eating (threshold: 4s)
+      tableId: 'table_01',
+      seatId: 'seat_01_1',
+      satisfaction: 5,
+      quote: 'No nê rồi!'
+    };
+
+    useGameStore.setState({
+      customers: [customer],
+      tableStates: {
+        table_01: { tableId: 'table_01', status: 'CLEAN', cleanedProgress: 100 }
+      }
+    });
+
+    // Tick simulation once: eatingTime reaches 4 -> customer leaves
+    useGameStore.getState().tickSimulation();
+
+    const state = useGameStore.getState();
+    const tableState = state.tableStates['table_01'];
+
+    // Table should now be marked DIRTY!
+    expect(tableState).toBeDefined();
+    expect(tableState.status).toBe('DIRTY');
+    expect(tableState.cleanedProgress).toBe(0);
+  });
+
+  it('cleaner employee automatically cleans dirty table and restores CLEAN status', () => {
+    const cleaner: Employee = {
+      id: 'emp_cleaner_tam',
+      name: 'Chú Tám Lao Công',
+      role: 'cleaner',
+      avatar: '🧹',
+      level: 1,
+      speed: 12,
+      quality: 10,
+      salaryPerSec: 0.4,
+      hired: true,
+      hireCost: 100,
+      upgradeCost: 60,
+      mood: 100,
+      catchphrase: 'Sạch bong kin kít!',
+      stamina: 100,
+      workState: 'IDLE'
+    };
+
+    useGameStore.setState({
+      employees: [cleaner],
+      tableStates: {
+        table_03: { tableId: 'table_03', status: 'DIRTY', cleanedProgress: 0 }
+      },
+      productionJobs: []
+    });
+
+    // Tick 1: Cleaner claims the dirty table
+    useGameStore.getState().processEmployees(1);
+
+    let state = useGameStore.getState();
+    let emp = state.employees.find(e => e.id === 'emp_cleaner_tam')!;
+    let table = state.tableStates['table_03'];
+
+    expect(emp.workState).toBe('WORKING');
+    expect(emp.cleaningTableId).toBe('table_03');
+    expect(table.status).toBe('BEING_CLEANED');
+
+    // Run employee processing until cleaning is completed (approx 2 ticks)
+    useGameStore.getState().processEmployees(2);
+
+    state = useGameStore.getState();
+    emp = state.employees.find(e => e.id === 'emp_cleaner_tam')!;
+    table = state.tableStates['table_03'];
+
+    expect(table.status).toBe('CLEAN');
+    expect(table.cleanedProgress).toBe(100);
+    expect(emp.workState).toBe('IDLE');
+    expect(emp.cleaningTableId).toBeUndefined();
+    expect(state.employeeLogs.some(l => l.employeeId === 'emp_cleaner_tam' && l.type === 'clean')).toBe(true);
+  });
+
+  it('player can manually click cleanTable to clear dirty dishes immediately', () => {
+    useGameStore.setState({
+      tableStates: {
+        table_02: { tableId: 'table_02', status: 'DIRTY', cleanedProgress: 0 }
+      }
+    });
+
+    const success = useGameStore.getState().cleanTable('table_02');
+    expect(success).toBe(true);
+
+    const state = useGameStore.getState();
+    expect(state.tableStates['table_02'].status).toBe('CLEAN');
+    expect(state.tableStates['table_02'].cleanedProgress).toBe(100);
   });
 });

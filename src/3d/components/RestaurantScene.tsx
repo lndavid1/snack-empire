@@ -13,6 +13,7 @@ import { InteriorDecor3D } from './stations/InteriorDecor3D';
 import { Employee3D } from './characters/Employee3D';
 import { Customer3D } from './characters/Customer3D';
 import { NavigationDebug3D } from './debug/NavigationDebug3D';
+import { useGameStore } from '../../store/gameStore';
 
 interface RestaurantSceneProps {
   sceneState: Restaurant3DState;
@@ -28,6 +29,8 @@ export const RestaurantScene: React.FC<RestaurantSceneProps> = ({
   showDebugNav = false,
 }) => {
   const [activePaths, setActivePaths] = React.useState<Map<string, { id: string; waypoints: Vector3Tuple[]; color?: string }>>(new Map());
+  const tableStates = useGameStore(s => s.tableStates);
+  const cleanTable = useGameStore(s => s.cleanTable);
 
   const handleMovementUpdate = React.useCallback((id: string, waypoints: Vector3Tuple[]) => {
     setActivePaths(prev => {
@@ -70,6 +73,8 @@ export const RestaurantScene: React.FC<RestaurantSceneProps> = ({
       {/* 7. Customer Dining Area */}
       <DiningArea3D 
         customers={sceneState.customers}
+        tableStates={tableStates}
+        onCleanTable={cleanTable}
         onSelectTable={(table) => onInspect({ type: 'table', data: table })}
         onSelectSeat={(seat) => onInspect({ type: 'seat', data: seat })}
       />
