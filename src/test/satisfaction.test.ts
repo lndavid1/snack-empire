@@ -257,6 +257,8 @@ describe('Phase 4: Store Customer Lifecycle & Service Loop Integration', () => {
       totalTipsEarned: 0,
       totalRevenueEarned: 0,
       reputation: 60,
+      prestigeUpgrades: [],
+      activeEvent: null,
       customers: [
         {
           id: 'c_serve_test',

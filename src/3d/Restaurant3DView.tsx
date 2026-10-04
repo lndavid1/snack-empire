@@ -24,7 +24,8 @@ import {
   Users, 
   ChefHat, 
   Clock,
-  Camera
+  Camera,
+  Route
 } from 'lucide-react';
 
 interface Restaurant3DViewProps {
@@ -35,6 +36,7 @@ export const Restaurant3DView: React.FC<Restaurant3DViewProps> = ({ onBackTo2D }
   const [inspected, setInspected] = useState<InspectedObject>(null);
   const [hasWebGLError, setHasWebGLError] = useState(false);
   const [activePreset, setActivePreset] = useState<CameraPresetId>('DEFAULT');
+  const [showDebugNav, setShowDebugNav] = useState(false);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
 
   // Subscribe to granular store slices
@@ -159,6 +161,19 @@ export const Restaurant3DView: React.FC<Restaurant3DViewProps> = ({ onBackTo2D }
           </div>
 
           <button
+            onClick={() => setShowDebugNav(prev => !prev)}
+            className={`px-3 py-1.5 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
+              showDebugNav 
+                ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-sky-500/10' 
+                : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+            }`}
+            title="Bật/Tắt hiển thị đồ thị đường đi nhân vật"
+          >
+            <Route className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Đồ Thị Đi</span>
+          </button>
+
+          <button
             onClick={resetCamera}
             className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95"
             title="Đặt lại góc camera ban đầu"
@@ -197,6 +212,7 @@ export const Restaurant3DView: React.FC<Restaurant3DViewProps> = ({ onBackTo2D }
             sceneState={sceneState} 
             onInspect={setInspected}
             controlsRef={controlsRef}
+            showDebugNav={showDebugNav}
           />
         </Canvas>
       </div>

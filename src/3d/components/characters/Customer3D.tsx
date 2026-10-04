@@ -1,13 +1,16 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import type { Group } from 'three';
-import { Vector3 } from 'three';
-import type { Customer3DState } from '../../types/sceneTypes';
+import type { Group, Mesh } from 'three';
+import type { Customer3DState, Vector3Tuple } from '../../types/sceneTypes';
+import { CharacterMovementController } from '../../navigation/movementSystem';
+import { MOVEMENT_CONFIG } from '../../navigation/navigationTypes';
 
 interface Customer3DProps {
   customer: Customer3DState;
   onSelect?: () => void;
+  otherPositions?: Vector3Tuple[];
+  onMovementUpdate?: (id: string, waypoints: Vector3Tuple[]) => void;
 }
 
 const MOOD_EMOJIS: Record<string, string> = {
@@ -28,16 +31,73 @@ const ARCHETYPE_BODY_COLORS: Record<string, string> = {
   grandma: '#059669',   // green
 };
 
-export const Customer3D: React.FC<Customer3DProps> = ({ customer, onSelect }) => {
+export const Customer3D: React.FC<Customer3DProps> = ({ 
+  customer, 
+  onSelect,
+  otherPositions = [],
+  onMovementUpdate,
+}) => {
   const groupRef = useRef<Group>(null);
-  const targetVec = useRef(new Vector3(...customer.targetPosition));
+  const leftArmRef = useRef<Mesh>(null);
+  const rightArmRef = useRef<Mesh>(null);
+  const leftLegRef = useRef<Mesh>(null);
+  const rightLegRef = useRef<Mesh>(null);
 
-  targetVec.current.set(...customer.targetPosition);
+  // Persistent Movement Controller instance
+  const controllerRef = useRef<CharacterMovementController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = new CharacterMovementController(
+      customer.currentPosition,
+      0,
+      MOVEMENT_CONFIG.CUSTOMER_WALK_SPEED
+    );
+  }
 
-  // Smooth lerp movement toward target position
-  useFrame((_, delta) => {
-    if (groupRef.current) {
-      groupRef.current.position.lerp(targetVec.current, Math.min(1, delta * 4));
+  // React to target position changes from Game State Bridge
+  useEffect(() => {
+    if (controllerRef.current) {
+      controllerRef.current.setDestination(customer.targetPosition);
+      onMovementUpdate?.(customer.id, controllerRef.current.waypoints);
+    }
+  }, [customer.targetPosition[0], customer.targetPosition[1], customer.targetPosition[2]]);
+
+  // Smooth frame-by-frame movement along waypoint path & walk cycle
+  useFrame((state, delta) => {
+    if (!controllerRef.current || !groupRef.current) return;
+
+    const clampedDelta = Math.min(delta, 0.1);
+    const movement = controllerRef.current.update(clampedDelta, otherPositions);
+
+    const time = state.clock.elapsedTime;
+
+    // Bobbing offset
+    const bobY = movement.isWalking 
+      ? Math.sin(time * 10) * 0.03 
+      : Math.sin(time * 2.0) * 0.01;
+
+    groupRef.current.position.set(
+      movement.position[0],
+      movement.position[1] + bobY,
+      movement.position[2]
+    );
+
+    groupRef.current.rotation.y = movement.rotation;
+
+    // Limb animation
+    if (movement.isWalking) {
+      const armSwing = Math.sin(time * 10) * 0.3;
+      const legSwing = Math.sin(time * 10) * 0.4;
+
+      if (leftArmRef.current) leftArmRef.current.rotation.x = armSwing;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = -armSwing;
+      if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = -legSwing;
+    } else {
+      // Idle state
+      if (leftArmRef.current) leftArmRef.current.rotation.x = 0;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = 0;
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
     }
   });
 
@@ -118,20 +178,24 @@ export const Customer3D: React.FC<Customer3DProps> = ({ customer, onSelect }) =>
       </mesh>
 
       {/* Arms */}
-      {[-0.24, 0.24].map((ax, i) => (
-        <mesh key={i} position={[ax, 0.78, 0]} castShadow>
-          <boxGeometry args={[0.09, 0.42, 0.09]} />
-          <meshStandardMaterial color={bodyColor} roughness={0.7} />
-        </mesh>
-      ))}
+      <mesh ref={leftArmRef} position={[-0.24, 0.78, 0]} castShadow>
+        <boxGeometry args={[0.09, 0.42, 0.09]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.7} />
+      </mesh>
+      <mesh ref={rightArmRef} position={[0.24, 0.78, 0]} castShadow>
+        <boxGeometry args={[0.09, 0.42, 0.09]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.7} />
+      </mesh>
 
       {/* Legs / Pants */}
-      {[-0.1, 0.1].map((lx, i) => (
-        <mesh key={i} position={[lx, 0.27, 0]} castShadow>
-          <boxGeometry args={[0.13, 0.54, 0.15]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.8} />
-        </mesh>
-      ))}
+      <mesh ref={leftLegRef} position={[-0.1, 0.27, 0]} castShadow>
+        <boxGeometry args={[0.13, 0.54, 0.15]} />
+        <meshStandardMaterial color="#1e293b" roughness={0.8} />
+      </mesh>
+      <mesh ref={rightLegRef} position={[0.1, 0.27, 0]} castShadow>
+        <boxGeometry args={[0.13, 0.54, 0.15]} />
+        <meshStandardMaterial color="#1e293b" roughness={0.8} />
+      </mesh>
     </group>
   );
 };

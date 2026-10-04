@@ -1,26 +1,94 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import type { Group } from 'three';
-import { Vector3 } from 'three';
-import type { Employee3DState } from '../../types/sceneTypes';
+import type { Group, Mesh } from 'three';
+import type { Employee3DState, Vector3Tuple } from '../../types/sceneTypes';
+import { CharacterMovementController } from '../../navigation/movementSystem';
+import { MOVEMENT_CONFIG } from '../../navigation/navigationTypes';
 
 interface Employee3DProps {
   employee: Employee3DState;
   onSelect?: () => void;
+  otherPositions?: Vector3Tuple[];
+  onMovementUpdate?: (id: string, waypoints: Vector3Tuple[]) => void;
 }
 
-export const Employee3D: React.FC<Employee3DProps> = ({ employee, onSelect }) => {
+export const Employee3D: React.FC<Employee3DProps> = ({ 
+  employee, 
+  onSelect,
+  otherPositions = [],
+  onMovementUpdate,
+}) => {
   const groupRef = useRef<Group>(null);
-  const targetVec = useRef(new Vector3(...employee.targetPosition));
+  const leftArmRef = useRef<Mesh>(null);
+  const rightArmRef = useRef<Mesh>(null);
+  const leftLegRef = useRef<Mesh>(null);
+  const rightLegRef = useRef<Mesh>(null);
 
-  // Update target on prop changes
-  targetVec.current.set(...employee.targetPosition);
+  // Persistent Movement Controller instance
+  const controllerRef = useRef<CharacterMovementController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = new CharacterMovementController(
+      employee.currentPosition,
+      0,
+      MOVEMENT_CONFIG.EMPLOYEE_WALK_SPEED
+    );
+  }
 
-  // Smooth lerp movement toward target position
-  useFrame((_, delta) => {
-    if (groupRef.current) {
-      groupRef.current.position.lerp(targetVec.current, Math.min(1, delta * 5));
+  // React to target position changes from Game State Bridge
+  useEffect(() => {
+    if (controllerRef.current) {
+      controllerRef.current.setDestination(employee.targetPosition);
+      onMovementUpdate?.(employee.id, controllerRef.current.waypoints);
+    }
+  }, [employee.targetPosition[0], employee.targetPosition[1], employee.targetPosition[2]]);
+
+  // Smooth frame-by-frame movement along waypoint path & walk cycle
+  useFrame((state, delta) => {
+    if (!controllerRef.current || !groupRef.current) return;
+
+    const clampedDelta = Math.min(delta, 0.1);
+    const movement = controllerRef.current.update(clampedDelta, otherPositions);
+
+    const time = state.clock.elapsedTime;
+    const isWorking = employee.workState === 'WORKING';
+
+    // Bobbing offset
+    const bobY = movement.isWalking 
+      ? Math.sin(time * 12) * 0.035 
+      : Math.sin(time * 2.5) * 0.012;
+
+    groupRef.current.position.set(
+      movement.position[0],
+      movement.position[1] + bobY,
+      movement.position[2]
+    );
+
+    groupRef.current.rotation.y = movement.rotation;
+
+    // Limb animation
+    if (movement.isWalking) {
+      const armSwing = Math.sin(time * 12) * 0.35;
+      const legSwing = Math.sin(time * 12) * 0.45;
+
+      if (leftArmRef.current) {
+        leftArmRef.current.rotation.x = isWorking ? 0.6 : armSwing;
+      }
+      if (rightArmRef.current) {
+        rightArmRef.current.rotation.x = isWorking ? 0.6 : -armSwing;
+      }
+      if (leftLegRef.current) {
+        leftLegRef.current.rotation.x = legSwing;
+      }
+      if (rightLegRef.current) {
+        rightLegRef.current.rotation.x = -legSwing;
+      }
+    } else {
+      // Idle state
+      if (leftArmRef.current) leftArmRef.current.rotation.x = isWorking ? 0.6 : 0;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = isWorking ? 0.6 : 0;
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
     }
   });
 
@@ -111,20 +179,24 @@ export const Employee3D: React.FC<Employee3DProps> = ({ employee, onSelect }) =>
       </mesh>
 
       {/* Arms */}
-      {[-0.26, 0.26].map((ax, i) => (
-        <mesh key={i} position={[ax, 0.8, isWorking ? 0.1 : 0]} rotation={[isWorking ? 0.6 : 0, 0, 0]} castShadow>
-          <boxGeometry args={[0.1, 0.45, 0.1]} />
-          <meshStandardMaterial color={employee.color} roughness={0.7} />
-        </mesh>
-      ))}
+      <mesh ref={leftArmRef} position={[-0.26, 0.8, isWorking ? 0.1 : 0]} rotation={[isWorking ? 0.6 : 0, 0, 0]} castShadow>
+        <boxGeometry args={[0.1, 0.45, 0.1]} />
+        <meshStandardMaterial color={employee.color} roughness={0.7} />
+      </mesh>
+      <mesh ref={rightArmRef} position={[0.26, 0.8, isWorking ? 0.1 : 0]} rotation={[isWorking ? 0.6 : 0, 0, 0]} castShadow>
+        <boxGeometry args={[0.1, 0.45, 0.1]} />
+        <meshStandardMaterial color={employee.color} roughness={0.7} />
+      </mesh>
 
       {/* Legs */}
-      {[-0.11, 0.11].map((lx, i) => (
-        <mesh key={i} position={[lx, 0.27, 0]} castShadow>
-          <boxGeometry args={[0.14, 0.54, 0.16]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.8} />
-        </mesh>
-      ))}
+      <mesh ref={leftLegRef} position={[-0.11, 0.27, 0]} castShadow>
+        <boxGeometry args={[0.14, 0.54, 0.16]} />
+        <meshStandardMaterial color="#1e293b" roughness={0.8} />
+      </mesh>
+      <mesh ref={rightLegRef} position={[0.11, 0.27, 0]} castShadow>
+        <boxGeometry args={[0.14, 0.54, 0.16]} />
+        <meshStandardMaterial color="#1e293b" roughness={0.8} />
+      </mesh>
     </group>
   );
 };
