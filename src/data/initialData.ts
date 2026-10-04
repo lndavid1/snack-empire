@@ -396,7 +396,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     hireCost: 120,
     upgradeCost: 80,
     mood: 95,
-    catchphrase: '"Cảm ơn quý khách, quét mã QR nha bấy bì!"'
+    catchphrase: '"Cảm ơn quý khách, quét mã QR nha bấy bì!"',
+    archetype: 'SERVICE',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'SERVICE_AREA',
+    skills: {
+      speed: 35,
+      quality: 45,
+      accuracy: 60,
+      service: 75,
+      stamina: 100
+    }
   },
   {
     id: 'emp_cook_bob',
@@ -411,7 +423,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     hireCost: 250,
     upgradeCost: 140,
     mood: 90,
-    catchphrase: '"Tay đảo chảo thoăn thoắt, lật burger như ảo thuật."'
+    catchphrase: '"Tay đảo chảo thoăn thoắt, lật burger như ảo thuật."',
+    archetype: 'QUALITY',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'STATION',
+    skills: {
+      speed: 45,
+      quality: 65,
+      accuracy: 60,
+      service: 30,
+      stamina: 100
+    }
   },
   {
     id: 'emp_barista_duy',
@@ -426,7 +450,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     hireCost: 400,
     upgradeCost: 200,
     mood: 88,
-    catchphrase: '"Đá xay mịn như nhung, latte art hình trái tim."'
+    catchphrase: '"Đá xay mịn như nhung, latte art hình trái tim."',
+    archetype: 'BALANCED',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'STATION',
+    skills: {
+      speed: 40,
+      quality: 60,
+      accuracy: 55,
+      service: 50,
+      stamina: 100
+    }
   },
   {
     id: 'emp_shipper_nam',
@@ -441,7 +477,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     hireCost: 800,
     upgradeCost: 350,
     mood: 92,
-    catchphrase: '"Không ngại mưa gió, 5 phút là tới tay khách!"'
+    catchphrase: '"Không ngại mưa gió, 5 phút là tới tay khách!"',
+    archetype: 'FAST',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'SERVICE_AREA',
+    skills: {
+      speed: 70,
+      quality: 40,
+      accuracy: 45,
+      service: 40,
+      stamina: 100
+    }
   },
   {
     id: 'emp_marketer_huy',
@@ -456,7 +504,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     hireCost: 2000,
     upgradeCost: 800,
     mood: 85,
-    catchphrase: '"Video TikTok hôm nay cán mốc 10 triệu view rồi sếp ơi!"'
+    catchphrase: '"Video TikTok hôm nay cán mốc 10 triệu view rồi sếp ơi!"',
+    archetype: 'BALANCED',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'IDLE_AREA',
+    skills: {
+      speed: 50,
+      quality: 75,
+      accuracy: 60,
+      service: 50,
+      stamina: 100
+    }
   },
   {
     id: 'emp_manager_lan',
@@ -471,7 +531,19 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     hireCost: 5000,
     upgradeCost: 1800,
     mood: 89,
-    catchphrase: '"Tự động hóa toàn bộ quy trình, không để thất thoát 1 xu."'
+    catchphrase: '"Tự động hóa toàn bộ quy trình, không để thất thoát 1 xu."',
+    archetype: 'HARDWORKER',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'IDLE_AREA',
+    skills: {
+      speed: 70,
+      quality: 80,
+      accuracy: 80,
+      service: 65,
+      stamina: 100
+    }
   },
   {
     id: 'emp_ceo_robo',
@@ -483,10 +555,22 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     quality: 99,
     salaryPerSec: 10.0,
     hired: false,
-    hireCost: 25000,
-    upgradeCost: 8000,
+    hireCost: 20000,
+    upgradeCost: 10000,
     mood: 100,
-    catchphrase: '"Tối ưu hóa lợi nhuận 99.99%. Nhân loại thật hiệu quả."'
+    catchphrase: '"Hiệu suất tối đa 99.9%, hệ thống vận hành hoàn hảo."',
+    archetype: 'FAST',
+    stamina: 100,
+    maxStamina: 100,
+    workState: 'IDLE',
+    currentLocation: 'IDLE_AREA',
+    skills: {
+      speed: 99,
+      quality: 99,
+      accuracy: 99,
+      service: 99,
+      stamina: 100
+    }
   }
 ];
 

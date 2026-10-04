@@ -19,7 +19,8 @@ import {
   ProductionStation,
   ProductionJob,
   Order,
-  CustomerMood
+  CustomerMood,
+  EmployeeLogEvent
 } from '../types/game';
 import {
   STORE_TIERS,
@@ -37,6 +38,7 @@ import {
 import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
 import { RECIPES_CATALOG, getRecipeById, getRecipeByFoodItemId } from '../data/recipes';
 import { SatisfactionService } from '../services/satisfaction';
+import { EmployeeWorkflowService } from '../services/employeeWorkflow';
 import { sound } from '../services/sound';
 import { StorageService, SaveData } from '../services/storage';
 
@@ -169,6 +171,10 @@ export interface GameState {
   enqueueProductionJob: (recipeId: string, orderId?: string) => { success: boolean; jobId?: string; reason?: string };
   processProduction: (deltaSeconds?: number) => void;
   repairEquipment: (equipmentId: string) => boolean;
+  // Phase 5 Employee Workflow Actions
+  employeeLogs: EmployeeLogEvent[];
+  processEmployees: (deltaSeconds?: number) => void;
+  addEmployeeLog: (employeeId: string, message: string, type: 'work' | 'serve' | 'rest' | 'mistake') => void;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -240,6 +246,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   stations: STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
   productionJobs: [],
   unlockedRecipeIds: ['recipe_french_fries'],
+  employeeLogs: [],
 
   initGame: () => {
     // Try to load existing save
@@ -640,24 +647,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     // 0. Production Engine Tick (Process stations, cooking timers, equipment wear)
     get().processProduction(1);
 
-    // 1. Employee automation
-    const stateBeforeAuto = get();
-    const hasCook = stateBeforeAuto.employees.some(e => e.role === 'cook' && e.hired);
-    const hasCashier = stateBeforeAuto.employees.some(e => e.role === 'cashier' && e.hired);
-
-    // Auto service if both cook and cashier are working
-    if (hasCook && hasCashier && stateBeforeAuto.customers.length > 0) {
-      // Cook speed bonus
-      const cook = stateBeforeAuto.employees.find(e => e.role === 'cook' && e.hired)!;
-      const speedUpgrade = stateBeforeAuto.upgrades.find(u => u.effectType === 'speed');
-      const speedMultiplier = 1 + (cook.speed / 100) + (speedUpgrade ? speedUpgrade.level * speedUpgrade.effectValue : 0);
-      
-      // Serve up to N customers depending on tier and speed
-      const customersToServeCount = Math.max(1, Math.floor(speedMultiplier * 0.8));
-      for (let i = 0; i < customersToServeCount; i++) {
-        get().manualCookAndServe();
-      }
-    }
+    // 1. Employee Workflows & Automation Tick (Task prioritization, stamina update, service execution)
+    get().processEmployees(1);
 
     const state = get();
     const currentTier = STORE_TIERS.find(t => t.id === state.currentTierId) || STORE_TIERS[0];
@@ -1272,7 +1263,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       selectedSupplierId: state.selectedSupplierId,
       ingredients: state.ingredients.reduce((acc, i) => ({ ...acc, [i.id]: i.stock }), {}),
       foodLevels: state.foods.reduce((acc, f) => ({ ...acc, [f.id]: { level: f.level, unlocked: f.isUnlocked, sellingPrice: f.sellingPrice } }), {}),
-      hiredEmployees: state.employees.reduce((acc, e) => ({ ...acc, [e.id]: { hired: e.hired, level: e.level, mood: e.mood, assignedStationId: e.assignedStationId } }), {}),
+      hiredEmployees: state.employees.reduce((acc, e) => ({ ...acc, [e.id]: { hired: e.hired, level: e.level, mood: e.mood, assignedStationId: e.assignedStationId, stamina: e.stamina } }), {}),
       upgrades: state.upgrades.reduce((acc, u) => ({ ...acc, [u.id]: u.level }), {}),
       prestigeUpgrades: state.prestigeUpgrades.reduce((acc, p) => ({ ...acc, [p.id]: p.level }), {}),
       totalSalesCount: state.totalSalesCount,
@@ -1362,7 +1353,10 @@ export const useGameStore = create<GameState>((set, get) => ({
             hired: savedEmp.hired,
             level: savedEmp.level,
             mood: savedEmp.mood,
-            assignedStationId: savedEmp.assignedStationId || e.assignedStationId
+            assignedStationId: savedEmp.assignedStationId || e.assignedStationId,
+            stamina: (savedEmp as any).stamina !== undefined ? (savedEmp as any).stamina : (e.stamina ?? 100),
+            workState: 'IDLE' as const,
+            currentLocation: (savedEmp.assignedStationId ? 'STATION' : (e.role === 'cook' ? 'STATION' : 'SERVICE_AREA')) as any
           };
         }
         return e;
@@ -1442,10 +1436,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     // Update employees: assign stationId to employee, clear any other employee at this station
     const updatedEmployees = state.employees.map(e => {
       if (e.id === employeeId) {
-        return { ...e, assignedStationId: stationId };
+        return { ...e, assignedStationId: stationId, currentLocation: 'STATION' as const };
       }
       if (e.assignedStationId === stationId) {
-        return { ...e, assignedStationId: undefined };
+        return { ...e, assignedStationId: undefined, currentLocation: 'IDLE_AREA' as const };
       }
       return e;
     });
@@ -1461,7 +1455,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const assignedEmpId = station.assignedEmployeeId;
     const updatedStations = state.stations.map(s => (s.id === stationId ? { ...s, assignedEmployeeId: undefined } : s));
-    const updatedEmployees = state.employees.map(e => (e.id === assignedEmpId ? { ...e, assignedStationId: undefined } : e));
+    const updatedEmployees = state.employees.map(e => (e.id === assignedEmpId ? { ...e, assignedStationId: undefined, currentLocation: 'IDLE_AREA' as const } : e));
 
     set({ stations: updatedStations, employees: updatedEmployees });
     return true;
@@ -1631,6 +1625,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const updatedJobs = state.productionJobs.map(j => ({ ...j, consumedStepIndices: [...(j.consumedStepIndices || [])] }));
     const updatedIngredients = state.ingredients.map(i => ({ ...i }));
     const updatedEquipment = state.equipment.map(e => ({ ...e }));
+    const updatedEmployees = state.employees.map(e => ({ ...e }));
 
     // Track jobs processed in this tick to prevent a job from teleporting through multiple stations in a single tick
     const processedJobIdsInTick = new Set<string>();
@@ -1740,11 +1735,34 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       let employeeSpeedMult = 1.0;
       let employeeQuality = 10;
-      if (station.assignedEmployeeId) {
-        const emp = state.employees.find(e => e.id === station.assignedEmployeeId && e.hired);
+      const assignedEmpId = station.assignedEmployeeId || job.employeeId;
+      if (assignedEmpId) {
+        const emp = updatedEmployees.find(e => e.id === assignedEmpId && e.hired);
         if (emp) {
-          employeeSpeedMult = 1 + (emp.speed / 100);
-          employeeQuality = emp.quality;
+          const staminaFactor = EmployeeWorkflowService.getStaminaPerformanceMultiplier(emp.stamina ?? 100);
+          if (staminaFactor <= 0) {
+            // Employee exhausted: cannot work on this step until rested
+            emp.workState = 'RESTING';
+            emp.currentLocation = 'REST_AREA';
+            continue;
+          }
+
+          const effSpeed = EmployeeWorkflowService.getEffectiveSpeed(emp);
+          const effQuality = EmployeeWorkflowService.getEffectiveQuality(emp);
+          employeeSpeedMult = (1 + effSpeed / 100) * staminaFactor;
+          employeeQuality = effQuality;
+
+          // Deduct stamina for work
+          emp.stamina = EmployeeWorkflowService.updateStamina(emp.stamina ?? 100, true, deltaSeconds);
+          emp.workState = 'WORKING';
+          emp.currentLocation = 'STATION';
+          emp.currentProductionJobId = job.id;
+          job.employeeId = emp.id;
+
+          // Check for mistake
+          if (EmployeeWorkflowService.checkForMistake(emp, equip.condition)) {
+            job.qualityScore = Math.max(40, (job.qualityScore ?? 90) - 8);
+          }
         }
       }
 
@@ -1757,6 +1775,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (job.progress >= 100) {
         // Wear equipment slightly per completed operation
         equip.condition = Math.max(0, equip.condition - 0.5);
+
+        // Release working employee from this step
+        if (assignedEmpId) {
+          const emp = updatedEmployees.find(e => e.id === assignedEmpId);
+          if (emp && emp.currentProductionJobId === job.id) {
+            emp.workState = 'IDLE';
+            emp.currentProductionJobId = undefined;
+          }
+        }
+        job.employeeId = undefined;
 
         // Check if final step of the recipe
         if (job.currentStepIndex >= recipe.steps.length - 1) {
@@ -1827,7 +1855,187 @@ export const useGameStore = create<GameState>((set, get) => ({
       productionJobs: updatedJobs,
       ingredients: updatedIngredients,
       equipment: updatedEquipment,
-      orders: updatedOrders
+      orders: updatedOrders,
+      employees: updatedEmployees
+    });
+  },
+
+  addEmployeeLog: (employeeId: string, message: string, type: 'work' | 'serve' | 'rest' | 'mistake') => {
+    const emp = get().employees.find(e => e.id === employeeId);
+    const newLog: EmployeeLogEvent = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: Date.now(),
+      employeeId,
+      employeeName: emp ? emp.name : 'Nhân viên',
+      message,
+      type
+    };
+    set(state => ({
+      employeeLogs: [newLog, ...state.employeeLogs.slice(0, 19)]
+    }));
+  },
+
+  processEmployees: (deltaSeconds = 1) => {
+    const state = get();
+    const updatedEmployees = state.employees.map(e => ({ ...e }));
+    let updatedJobs = state.productionJobs.map(j => ({ ...j }));
+    const updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
+    let updatedOrders = state.orders.map(o => ({ ...o }));
+    let updatedLogs = [...state.employeeLogs];
+
+    for (const emp of updatedEmployees) {
+      if (!emp.hired) continue;
+
+      // 1. Resting Employees Recovery
+      if (emp.workState === 'RESTING') {
+        const nextStamina = EmployeeWorkflowService.updateStamina(emp.stamina ?? 100, false, deltaSeconds);
+        emp.stamina = nextStamina;
+        emp.currentLocation = 'REST_AREA';
+
+        if (nextStamina >= 80) {
+          emp.workState = 'IDLE';
+          emp.currentLocation = emp.role === 'cook' ? 'STATION' : 'SERVICE_AREA';
+          const newLog: EmployeeLogEvent = {
+            id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: Date.now(),
+            employeeId: emp.id,
+            employeeName: emp.name,
+            message: `${emp.name} đã hồi phục thể lực và sẵn sàng làm việc! ⚡`,
+            type: 'rest'
+          };
+          updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
+        }
+        continue;
+      }
+
+      // Check if exhausted and needs rest
+      if ((emp.stamina ?? 100) <= 20) {
+        const hasEmergency = state.customers.some(c => 
+          c.state === 'waiting' && ((c.patience ?? c.currentWait ?? 20) / (c.maxPatience || 20)) <= 0.15
+        );
+
+        if (!hasEmergency) {
+          emp.workState = 'RESTING';
+          emp.currentLocation = 'REST_AREA';
+          if (emp.currentProductionJobId) {
+            const job = updatedJobs.find(j => j.id === emp.currentProductionJobId);
+            if (job && job.employeeId === emp.id) {
+              job.employeeId = undefined;
+            }
+            emp.currentProductionJobId = undefined;
+          }
+          const newLog: EmployeeLogEvent = {
+            id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            timestamp: Date.now(),
+            employeeId: emp.id,
+            employeeName: emp.name,
+            message: `${emp.name} mệt mỏi (${Math.round(emp.stamina ?? 0)}%) và bắt đầu nghỉ ngơi 💤`,
+            type: 'rest'
+          };
+          updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
+          continue;
+        }
+      }
+
+      // 2. Service Employees (Cashier, Shipper, Manager)
+      if (EmployeeWorkflowService.isServiceWorker(emp) && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
+        const readyJobs = updatedJobs.filter(j => j.status === 'READY');
+        if (readyJobs.length > 0 && state.customers.some(c => c.state === 'waiting')) {
+          const candidates: { job: ProductionJob; customer: Customer; priority: number }[] = [];
+
+          for (const rJob of readyJobs) {
+            for (const cust of state.customers) {
+              if (cust.state !== 'waiting') continue;
+
+              const matchRecipe = getRecipeByFoodItemId(cust.orderedFoodId || '');
+              const isMatch = rJob.orderId === cust.id || (matchRecipe && matchRecipe.id === rJob.recipeId);
+
+              if (isMatch) {
+                const ord = updatedOrders.find(o => o.id === cust.orderId || o.customerId === cust.id);
+                const priority = EmployeeWorkflowService.getServicePriority(
+                  ord || { id: 'tmp', customerId: cust.id, foodId: cust.orderedFoodId || '', quantity: 1, createdAt: Date.now(), waitingTime: cust.waitingTime || 0, status: 'READY', basePrice: 10 },
+                  cust
+                );
+                candidates.push({ job: rJob, customer: cust, priority });
+              }
+            }
+          }
+
+          if (candidates.length > 0) {
+            candidates.sort((a, b) => b.priority - a.priority);
+            const best = candidates[0];
+
+            emp.workState = 'SERVING';
+            emp.currentLocation = 'SERVICE_AREA';
+            emp.currentOrderId = best.customer.orderId;
+
+            // Trigger manualCookAndServe
+            get().manualCookAndServe(best.customer.id);
+
+            // Pull fresh jobs and orders updated by manualCookAndServe
+            const freshState = get();
+            updatedJobs = freshState.productionJobs.map(j => ({ ...j }));
+            updatedOrders = freshState.orders.map(o => ({ ...o }));
+
+            emp.stamina = EmployeeWorkflowService.updateStamina(emp.stamina ?? 100, true, deltaSeconds, emp.archetype);
+            emp.workState = 'IDLE';
+            emp.currentOrderId = undefined;
+
+            const foodObj = state.foods.find(f => f.id === best.customer.orderedFoodId);
+            const newLog: EmployeeLogEvent = {
+              id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              timestamp: Date.now(),
+              employeeId: emp.id,
+              employeeName: emp.name,
+              message: `${emp.name} đã phục vụ ${foodObj ? foodObj.name : 'món ăn'} cho khách ${best.customer.name}! 🍱`,
+              type: 'serve'
+            };
+            updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
+          }
+        }
+      }
+
+      // 3. Station Workers (Cooks, Baristas)
+      if ((emp.role === 'cook' || emp.role === 'barista') && (emp.workState === 'IDLE' || emp.workState === 'SEEKING_JOB' || !emp.workState)) {
+        const candidateStations = updatedStations.filter(s => 
+          s.isOperational && EmployeeWorkflowService.canEmployeeWorkAtStation(emp, s)
+        );
+
+        for (const st of candidateStations) {
+          if (st.queue.length > 0) {
+            const queueJobs = st.queue
+              .map((jId, idx) => {
+                const j = updatedJobs.find(job => job.id === jId && !['READY', 'SERVED', 'FAILED', 'CANCELLED'].includes(job.status));
+                if (!j) return null;
+                const c = state.customers.find(cust => cust.id === j.orderId);
+                const priority = EmployeeWorkflowService.getProductionPriority(j, c, idx);
+                return { job: j, priority };
+              })
+              .filter((item): item is { job: ProductionJob; priority: number } => item !== null);
+
+            if (queueJobs.length > 0) {
+              queueJobs.sort((a, b) => b.priority - a.priority);
+              const highest = queueJobs[0];
+
+              if (!highest.job.employeeId || highest.job.employeeId === emp.id) {
+                st.activeJobId = highest.job.id;
+                highest.job.employeeId = emp.id;
+                emp.workState = 'WORKING';
+                emp.currentLocation = 'STATION';
+                emp.currentProductionJobId = highest.job.id;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    set({
+      employees: updatedEmployees,
+      productionJobs: updatedJobs,
+      stations: updatedStations,
+      employeeLogs: updatedLogs
     });
   }
 }));

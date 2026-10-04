@@ -88,6 +88,62 @@ export type EmployeeRole =
   | 'marketer'
   | 'ceo';
 
+export type EmployeeWorkState =
+  | 'IDLE'
+  | 'SEEKING_JOB'
+  | 'WORKING'
+  | 'SERVING'
+  | 'RESTING'
+  | 'UNAVAILABLE';
+
+export type EmployeeLocation =
+  | 'STATION'
+  | 'SERVICE_AREA'
+  | 'REST_AREA'
+  | 'IDLE_AREA';
+
+export type EmployeeArchetype =
+  | 'FAST'
+  | 'QUALITY'
+  | 'BALANCED'
+  | 'HARDWORKER'
+  | 'SERVICE';
+
+export interface EmployeeSkills {
+  speed: number;
+  quality: number;
+  accuracy: number;
+  service: number;
+  stamina: number;
+}
+
+export type EmployeeTaskType =
+  | 'PRODUCTION'
+  | 'SERVE'
+  | 'REST'
+  | 'CLEAN'
+  | 'REPAIR';
+
+export interface EmployeeTask {
+  id: string;
+  employeeId: string;
+  type: EmployeeTaskType;
+  productionJobId?: string;
+  orderId?: string;
+  stationId?: string;
+  priority: number;
+  createdAt: number;
+}
+
+export interface EmployeeLogEvent {
+  id: string;
+  timestamp: number;
+  employeeId: string;
+  employeeName: string;
+  message: string;
+  type: 'work' | 'serve' | 'rest' | 'mistake';
+}
+
 export interface Employee {
   id: string;
   name: string;
@@ -102,16 +158,17 @@ export interface Employee {
   upgradeCost: number;
   mood: number;         // percentage
   catchphrase: string;
-  // Phase 2 Station Assignment & Skills
+  // Phase 2 & 5 Station Assignment & Workflows
   assignedStationId?: string;
-  skills?: {
-    cooking: number;
-    preparation: number;
-    serving: number;
-    speed: number;
-    accuracy: number;
-  };
+  skills?: EmployeeSkills;
   stamina?: number;
+  maxStamina?: number;
+  archetype?: EmployeeArchetype;
+  workState?: EmployeeWorkState;
+  currentLocation?: EmployeeLocation;
+  currentTaskId?: string;
+  currentProductionJobId?: string;
+  currentOrderId?: string;
 }
 
 // ----------------------------------------------------

@@ -17,7 +17,7 @@ export interface SaveData {
   selectedSupplierId: string;
   ingredients: Record<string, number>;
   foodLevels: Record<string, { level: number; unlocked: boolean; sellingPrice?: number }>;
-  hiredEmployees: Record<string, { hired: boolean; level: number; mood: number; assignedStationId?: string }>;
+  hiredEmployees: Record<string, { hired: boolean; level: number; mood: number; assignedStationId?: string; stamina?: number }>;
   upgrades: Record<string, number>;
   prestigeUpgrades: Record<string, number>;
   totalSalesCount: number;

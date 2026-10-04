@@ -10,7 +10,8 @@ import {
   Wrench, 
   ChefHat, 
   PackageCheck, 
-  Clock 
+  Clock,
+  Activity
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -29,7 +30,8 @@ export const DashboardView: React.FC = () => {
     stations,
     equipment,
     productionJobs,
-    repairEquipment
+    repairEquipment,
+    employeeLogs
   } = useGameStore();
 
   const [isCooking, setIsCooking] = useState(false);
@@ -359,10 +361,39 @@ export const DashboardView: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        <div className="py-2.5 text-center text-slate-500 text-[11px] font-medium flex items-center justify-center gap-1">
+                        <div className="py-2 text-center text-slate-500 text-[11px] font-medium flex items-center justify-center gap-1">
                           <Clock className="w-3 h-3" /> Trống - Sẵn sàng
                         </div>
                       )}
+
+                      {/* Station Assigned Worker (Phase 5) */}
+                      {(() => {
+                        const assignedWorker = employees.find(e => e.id === station.assignedEmployeeId && e.hired);
+                        return assignedWorker ? (
+                          <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[10px]">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-sm shrink-0">{assignedWorker.avatar}</span>
+                              <div className="truncate">
+                                <span className="font-extrabold text-slate-200 block truncate">{assignedWorker.name}</span>
+                                <span className="text-[9px] text-slate-400">⚡ {Math.round(assignedWorker.stamina ?? 100)}% thể lực</span>
+                              </div>
+                            </div>
+                            <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              assignedWorker.workState === 'WORKING' ? 'bg-amber-500/20 text-amber-300' :
+                              assignedWorker.workState === 'RESTING' ? 'bg-indigo-500/20 text-indigo-300' :
+                              'bg-slate-700/70 text-slate-300'
+                            }`}>
+                              {assignedWorker.workState === 'WORKING' ? '🔥 Nấu' :
+                               assignedWorker.workState === 'RESTING' ? '💤 Nghỉ' : '🟢 Trực'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[10px] text-slate-500">
+                            <span>Chưa phân công</span>
+                            <span className="text-[9px] text-amber-400/80">Tab Nhân Viên</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -451,6 +482,54 @@ export const DashboardView: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Employee Activity Log Feed (Phase 5) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl md:rounded-3xl p-4 md:p-5 shadow-lg">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
+                <h3 className="font-extrabold text-xs md:text-base text-slate-200">
+                  Nhật Ký Nhân Viên
+                </h3>
+              </div>
+              <span className="text-[10px] md:text-[11px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                Tự Động Hóa
+              </span>
+            </div>
+
+            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 no-scrollbar">
+              {employeeLogs && employeeLogs.length > 0 ? (
+                employeeLogs.slice(0, 6).map((log) => {
+                  const typeIcon = log.type === 'work' ? '🔥' : log.type === 'serve' ? '🏃' : log.type === 'rest' ? '💤' : '⚠️';
+                  return (
+                    <div
+                      key={log.id}
+                      className="bg-slate-800/80 border border-slate-700/60 rounded-xl p-2 text-xs flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">{typeIcon}</span>
+                        <div className="min-w-0">
+                          <div className="font-bold text-[11px] text-slate-200 truncate">
+                            {log.employeeName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {log.message}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[9px] text-slate-500 shrink-0 font-mono">
+                        {Math.max(0, Math.round((Date.now() - log.timestamp) / 1000))}s trước
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-4 text-center text-slate-500 text-xs italic">
+                  Đang chờ nhân viên bắt đầu ca làm...
+                </div>
+              )}
             </div>
           </div>
         </div>
