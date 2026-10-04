@@ -85,10 +85,17 @@ export const RestaurantScene: React.FC<RestaurantSceneProps> = ({
           ...sceneState.customers.map(c => c.targetPosition),
         ];
 
+        const activeJob = sceneState.stations.find(s => 
+          s.assignedEmployeeId === emp.id || 
+          s.id === emp.assignedStationId ||
+          (emp.currentJobId && s.activeJob?.id === emp.currentJobId)
+        )?.activeJob;
+
         return (
           <Employee3D 
             key={emp.id} 
             employee={emp} 
+            activeJob={activeJob}
             onSelect={() => onInspect({ type: 'employee', data: emp })}
             otherPositions={otherPositions}
             onMovementUpdate={handleMovementUpdate}

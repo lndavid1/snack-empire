@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import type { Mesh } from 'three';
 import type { Station3DState } from '../../types/sceneTypes';
 import { StationLabel3D } from '../ui/StationLabel3D';
+import { PotatoProp3D } from '../props/FoodProps3D';
 
 interface PrepTable3DProps {
   station: Station3DState;
@@ -9,8 +12,24 @@ interface PrepTable3DProps {
 
 export const PrepTable3D: React.FC<PrepTable3DProps> = ({ station, onSelect }) => {
   const [x, y, z] = station.position;
+  const isPreparing = station.activeJob?.status === 'PREPARING';
   const isWorn = station.equipmentCondition < 50;
   const tableColor = isWorn ? '#94a3b8' : '#cbd5e1';
+
+  const knifeRef = useRef<Mesh>(null);
+
+  // Rhythmic chopping animation when prepping
+  useFrame((state) => {
+    if (knifeRef.current && isPreparing) {
+      const time = state.clock.getElapsedTime();
+      // Rapid chopping rhythm
+      knifeRef.current.position.y = 0.95 + Math.abs(Math.sin(time * 16)) * 0.08;
+      knifeRef.current.rotation.x = Math.sin(time * 16) * 0.15;
+    } else if (knifeRef.current) {
+      knifeRef.current.position.y = 0.95;
+      knifeRef.current.rotation.x = 0;
+    }
+  });
 
   return (
     <group 
@@ -50,21 +69,35 @@ export const PrepTable3D: React.FC<PrepTable3DProps> = ({ station, onSelect }) =
       </mesh>
 
       {/* Kitchen Knife on board */}
-      <mesh position={[-0.2, 0.95, 0.05]} rotation={[0, 0.3, 0]} castShadow>
+      <mesh ref={knifeRef} position={[-0.2, 0.95, 0.05]} rotation={[0, 0.3, 0]} castShadow>
         <boxGeometry args={[0.35, 0.02, 0.06]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.2} metalness={0.9} />
       </mesh>
+
+      {/* Raw Potato being chopped on the board */}
+      <PotatoProp3D position={[-0.35, 0.96, 0]} scale={0.9} />
+
+      {/* Chopped Potato Slices / Fries Batons on board */}
+      {isPreparing && (
+        <group position={[-0.25, 0.94, -0.1]}>
+          {[-0.04, 0, 0.04].map((px, i) => (
+            <mesh key={i} position={[px, 0.01, 0]} castShadow>
+              <boxGeometry args={[0.025, 0.025, 0.12]} />
+              <meshStandardMaterial color="#fef08a" roughness={0.8} />
+            </mesh>
+          ))}
+        </group>
+      )}
 
       {/* Ingredient Tub (Potatoes Container) */}
       <mesh position={[0.45, 0.96, 0]} castShadow>
         <boxGeometry args={[0.5, 0.15, 0.4]} />
         <meshStandardMaterial color="#38bdf8" roughness={0.4} />
       </mesh>
-      {/* Potato inside tub */}
-      <mesh position={[0.45, 1.02, 0]} castShadow>
-        <sphereGeometry args={[0.1, 8, 8]} />
-        <meshStandardMaterial color="#b45309" roughness={0.9} />
-      </mesh>
+      {/* Whole Potatoes inside tub */}
+      <PotatoProp3D position={[0.45, 1.04, 0]} />
+      <PotatoProp3D position={[0.55, 1.03, -0.05]} scale={0.8} />
+      <PotatoProp3D position={[0.38, 1.02, 0.05]} scale={0.85} />
     </group>
   );
 };

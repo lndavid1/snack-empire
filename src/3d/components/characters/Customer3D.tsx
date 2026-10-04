@@ -5,6 +5,8 @@ import type { Group, Mesh } from 'three';
 import type { Customer3DState, Vector3Tuple } from '../../types/sceneTypes';
 import { CharacterMovementController } from '../../navigation/movementSystem';
 import { MOVEMENT_CONFIG } from '../../navigation/navigationTypes';
+import { resolveCustomerPresentationState } from '../../presentation/presentationStateResolver';
+import { FriesBoxProp3D } from '../props/FoodProps3D';
 
 interface Customer3DProps {
   customer: Customer3DState;
@@ -42,6 +44,7 @@ export const Customer3D: React.FC<Customer3DProps> = ({
   const rightArmRef = useRef<Mesh>(null);
   const leftLegRef = useRef<Mesh>(null);
   const rightLegRef = useRef<Mesh>(null);
+  const headRef = useRef<Mesh>(null);
 
   // Persistent Movement Controller instance
   const controllerRef = useRef<CharacterMovementController | null>(null);
@@ -61,7 +64,14 @@ export const Customer3D: React.FC<Customer3DProps> = ({
     }
   }, [customer.targetPosition[0], customer.targetPosition[1], customer.targetPosition[2]]);
 
-  // Smooth frame-by-frame movement along waypoint path & walk cycle
+  // Presentation action state
+  const presentationRef = useRef(resolveCustomerPresentationState({
+    customer,
+    movementStatus: controllerRef.current.status,
+    isNearDestination: false,
+  }));
+
+  // Smooth frame-by-frame movement along waypoint path & eating animation
   useFrame((state, delta) => {
     if (!controllerRef.current || !groupRef.current) return;
 
@@ -70,8 +80,24 @@ export const Customer3D: React.FC<Customer3DProps> = ({
 
     const time = state.clock.elapsedTime;
 
-    // Bobbing offset
-    const bobY = movement.isWalking 
+    // Check distance to final target position
+    const dx = customer.targetPosition[0] - movement.position[0];
+    const dz = customer.targetPosition[2] - movement.position[2];
+    const distToTarget = Math.sqrt(dx * dx + dz * dz);
+    const isNearDestination = distToTarget <= MOVEMENT_CONFIG.ARRIVAL_THRESHOLD;
+
+    const presentation = resolveCustomerPresentationState({
+      customer,
+      movementStatus: movement.status,
+      isNearDestination,
+    });
+    presentationRef.current = presentation;
+
+    const action = presentation.action;
+
+    // Vertical bobbing
+    const isWalking = action === 'WALKING' && movement.isWalking;
+    const bobY = isWalking 
       ? Math.sin(time * 10) * 0.03 
       : Math.sin(time * 2.0) * 0.01;
 
@@ -83,8 +109,8 @@ export const Customer3D: React.FC<Customer3DProps> = ({
 
     groupRef.current.rotation.y = movement.rotation;
 
-    // Limb animation
-    if (movement.isWalking) {
+    // Limb & Eating animation
+    if (action === 'WALKING') {
       const armSwing = Math.sin(time * 10) * 0.3;
       const legSwing = Math.sin(time * 10) * 0.4;
 
@@ -92,16 +118,30 @@ export const Customer3D: React.FC<Customer3DProps> = ({
       if (rightArmRef.current) rightArmRef.current.rotation.x = -armSwing;
       if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
       if (rightLegRef.current) rightLegRef.current.rotation.x = -legSwing;
+      if (headRef.current) headRef.current.rotation.x = 0;
+    } else if (action === 'EATING') {
+      // Right hand bringing fries to mouth rhythmically
+      const biteMotion = Math.sin(time * 3.5) * 0.35;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.55 + biteMotion;
+      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.3; // resting on table
+      if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
+      // Head nodding with enjoyment
+      if (headRef.current) headRef.current.rotation.x = Math.sin(time * 3.5) * 0.1;
     } else {
-      // Idle state
+      // WAITING in line: idle posture
       if (leftArmRef.current) leftArmRef.current.rotation.x = 0;
       if (rightArmRef.current) rightArmRef.current.rotation.x = 0;
       if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
       if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
+      if (headRef.current) headRef.current.rotation.x = 0;
     }
   });
 
-  const moodEmoji = MOOD_EMOJIS[customer.mood] || '😊';
+  const presentation = presentationRef.current;
+  const isEating = presentation.action === 'EATING';
+
+  const moodEmoji = isEating ? '😋' : (MOOD_EMOJIS[customer.mood] || '😊');
   const bodyColor = ARCHETYPE_BODY_COLORS[customer.archetype] || '#0284c7';
 
   return (
@@ -126,9 +166,9 @@ export const Customer3D: React.FC<Customer3DProps> = ({
           <div className="flex items-center gap-1.5 justify-center">
             <span className="text-xs">{moodEmoji}</span>
             <span className="font-black text-[10px] text-amber-300">
-              {customer.orderedFoodName || 'Đang gọi món'}
+              {isEating ? 'Đang thưởng thức 🍟' : (customer.orderedFoodName || 'Đang gọi món')}
             </span>
-            {customer.orderPrice && (
+            {customer.orderPrice && !isEating && (
               <span className="text-[9px] font-bold text-emerald-400">
                 ${customer.orderPrice}
               </span>
@@ -136,23 +176,25 @@ export const Customer3D: React.FC<Customer3DProps> = ({
           </div>
 
           {/* Patience Progress Bar */}
-          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
-            <div 
-              className={`h-full rounded-full transition-all duration-300 ${
-                customer.patiencePercent > 50
-                  ? 'bg-emerald-400'
-                  : customer.patiencePercent > 20
-                  ? 'bg-amber-400'
-                  : 'bg-rose-500 animate-pulse'
-              }`}
-              style={{ width: `${customer.patiencePercent}%` }}
-            />
-          </div>
+          {!isEating && (
+            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+              <div 
+                className={`h-full rounded-full transition-all duration-300 ${
+                  customer.patiencePercent > 50
+                    ? 'bg-emerald-400'
+                    : customer.patiencePercent > 20
+                    ? 'bg-amber-400'
+                    : 'bg-rose-500 animate-pulse'
+                }`}
+                style={{ width: `${customer.patiencePercent}%` }}
+              />
+            </div>
+          )}
         </div>
       </Html>
 
       {/* Head */}
-      <mesh position={[0, 1.25, 0]} castShadow>
+      <mesh ref={headRef} position={[0, 1.25, 0]} castShadow>
         <sphereGeometry args={[0.2, 16, 16]} />
         <meshStandardMaterial color="#fed7aa" roughness={0.6} />
       </mesh>
@@ -186,6 +228,13 @@ export const Customer3D: React.FC<Customer3DProps> = ({
         <boxGeometry args={[0.09, 0.42, 0.09]} />
         <meshStandardMaterial color={bodyColor} roughness={0.7} />
       </mesh>
+
+      {/* Food Box in front/in hand when EATING */}
+      {isEating && (
+        <group position={[0.16, 0.76, 0.22]}>
+          <FriesBoxProp3D scale={0.75} />
+        </group>
+      )}
 
       {/* Legs / Pants */}
       <mesh ref={leftLegRef} position={[-0.1, 0.27, 0]} castShadow>

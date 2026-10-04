@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import type { Group } from 'three';
 import type { Station3DState } from '../../types/sceneTypes';
 import { StationLabel3D } from '../ui/StationLabel3D';
+import { FriesBoxProp3D, SaltShakerProp3D } from '../props/FoodProps3D';
 
 interface PackingStation3DProps {
   station: Station3DState;
@@ -11,6 +14,20 @@ export const PackingStation3D: React.FC<PackingStation3DProps> = ({ station, onS
   const [x, y, z] = station.position;
   const isPacking = station.activeJob?.status === 'PACKING';
   const isWorn = station.equipmentCondition < 50;
+
+  const shakerRef = useRef<Group>(null);
+
+  // Rhythmic salt shaking animation when packing
+  useFrame((state) => {
+    if (shakerRef.current && isPacking) {
+      const time = state.clock.getElapsedTime();
+      shakerRef.current.position.y = 1.05 + Math.abs(Math.sin(time * 12)) * 0.06;
+      shakerRef.current.rotation.z = Math.sin(time * 12) * 0.45;
+    } else if (shakerRef.current) {
+      shakerRef.current.position.y = 0.95;
+      shakerRef.current.rotation.z = 0;
+    }
+  });
 
   return (
     <group 
@@ -56,39 +73,42 @@ export const PackingStation3D: React.FC<PackingStation3DProps> = ({ station, onS
           <meshStandardMaterial color="#334155" metalness={0.7} />
         </mesh>
         {/* Heat Glow Bulb */}
-        <pointLight color="#f97316" intensity={isPacking ? 1.4 : 0.6} distance={2.5} />
+        <pointLight color="#f97316" intensity={isPacking ? 1.6 : 0.6} distance={2.5} />
       </group>
 
       {/* Stack of Red Snack / Fries Boxes */}
-      <group position={[-0.45, 0.98, -0.2]}>
+      <group position={[-0.5, 0.98, -0.2]}>
         {[0, 0.08, 0.16].map((by, i) => (
           <mesh key={i} position={[0, by, 0]} castShadow>
-            <boxGeometry args={[0.32, 0.07, 0.28]} />
+            <boxGeometry args={[0.3, 0.07, 0.26]} />
             <meshStandardMaterial color="#ef4444" roughness={0.8} />
           </mesh>
         ))}
       </group>
 
+      {/* Salt & Seasoning Shaker */}
+      <group ref={shakerRef} position={[-0.1, 0.95, 0.05]}>
+        <SaltShakerProp3D />
+      </group>
+
       {/* Brown Craft Paper Takeaway Bags */}
-      <group position={[0.4, 1.05, -0.15]}>
+      <group position={[0.5, 1.05, -0.15]}>
         <mesh castShadow>
           <boxGeometry args={[0.3, 0.3, 0.2]} />
           <meshStandardMaterial color="#b45309" roughness={0.9} />
         </mesh>
       </group>
 
-      {/* Active Packaged Tray when packing */}
+      {/* Active Packaged Tray & Fresh Fries Box when packing or ready */}
       {isPacking && (
-        <group position={[0, 0.95, 0.1]}>
+        <group position={[0.15, 0.93, 0.1]}>
+          {/* Serving Tray */}
           <mesh castShadow>
             <boxGeometry args={[0.45, 0.03, 0.35]} />
             <meshStandardMaterial color="#e2e8f0" roughness={0.4} />
           </mesh>
-          {/* Box of fresh fries on tray */}
-          <mesh position={[0, 0.1, 0]} castShadow>
-            <boxGeometry args={[0.25, 0.18, 0.18]} />
-            <meshStandardMaterial color="#ef4444" roughness={0.8} />
-          </mesh>
+          {/* Freshly Filled Fries Box */}
+          <FriesBoxProp3D position={[0, 0.12, 0]} scale={0.9} />
         </group>
       )}
     </group>
