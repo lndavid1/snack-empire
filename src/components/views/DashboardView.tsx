@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { STORE_TIERS } from '../../data/initialData';
+import { getRecipeById } from '../../data/recipes';
 import type { FoodItem, Review, Customer, Employee } from '../../types/game';
 import { 
   Users, 
   Star, 
-  Zap,
-  ShoppingBag,
-  Coins
+  Zap, 
+  Wrench, 
+  ChefHat, 
+  PackageCheck, 
+  Clock 
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -22,6 +25,10 @@ export const DashboardView: React.FC = () => {
     totalRevenueEarned,
     totalCustomersServed,
     reviews,
+    stations,
+    equipment,
+    productionJobs,
+    repairEquipment
   } = useGameStore();
 
   const [isCooking, setIsCooking] = useState(false);
@@ -30,6 +37,7 @@ export const DashboardView: React.FC = () => {
   const hasCook = employees.some((emp: Employee) => emp.role === 'cook' && emp.hired);
   const hasCashier = employees.some((emp: Employee) => emp.role === 'cashier' && emp.hired);
   const isAutomated = hasCook && hasCashier;
+  const readyJobs = productionJobs.filter(j => j.status === 'READY');
 
   const handleHeroClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -185,24 +193,138 @@ export const DashboardView: React.FC = () => {
             </div>
           </div>
 
+          {/* Production Kitchen & Stations Monitor (Phase 3 Engine) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl md:rounded-3xl p-4 md:p-5 shadow-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ChefHat className="w-4 h-4 md:w-5 md:h-5 text-amber-400" />
+                <h3 className="font-extrabold text-xs md:text-base text-slate-200">
+                  Dây Chuyền Bếp ({stations.filter(s => s.isOperational).length} Trạm Hoạt Động)
+                </h3>
+              </div>
+              {readyJobs.length > 0 && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold text-[10px] md:text-xs border border-emerald-500/40 animate-pulse">
+                  <PackageCheck className="w-3.5 h-3.5" /> {readyJobs.length} Món Đã Chín!
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 md:gap-3">
+              {stations.map(station => {
+                const equip = equipment.find(e => e.id === station.equipmentId);
+                const activeJob = productionJobs.find(j => j.id === station.activeJobId && !['READY', 'SERVED', 'FAILED', 'CANCELLED'].includes(j.status));
+                const activeRecipe = activeJob ? getRecipeById(activeJob.recipeId) : null;
+                const activeStep = activeRecipe && activeJob ? activeRecipe.steps[activeJob.currentStepIndex] : null;
+
+                const stationIcons: Record<string, string> = {
+                  prep: '🔪',
+                  fryer: '🍟',
+                  packing: '📦',
+                  grill: '🥩',
+                  beverage: '☕'
+                };
+
+                return (
+                  <div
+                    key={station.id}
+                    className={`bg-slate-800/80 border rounded-xl md:rounded-2xl p-2.5 md:p-3 flex flex-col justify-between transition-all ${
+                      activeJob
+                        ? 'border-amber-500/60 shadow-md shadow-amber-500/10'
+                        : 'border-slate-700/60'
+                    }`}
+                  >
+                    <div>
+                      {/* Station Header */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xl md:text-2xl">{stationIcons[station.stationType] || '🍳'}</span>
+                          <div>
+                            <div className="font-black text-xs text-slate-200 leading-tight">
+                              {station.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              Hàng đợi: <span className="font-bold text-amber-300">{station.queue.length}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Condition Badge & Repair */}
+                        {equip && (
+                          <div className="text-right">
+                            <div className={`text-[10px] font-bold ${
+                              equip.condition >= 80 ? 'text-emerald-400' : equip.condition >= 50 ? 'text-amber-400' : 'text-rose-400'
+                            }`}>
+                              Độ bền {Math.round(equip.condition)}%
+                            </div>
+                            {equip.condition < 95 && (
+                              <button
+                                onClick={() => repairEquipment(equip.id)}
+                                className="text-[9px] font-black px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/40 transition-colors flex items-center gap-0.5 mt-0.5 cursor-pointer ml-auto"
+                                title="Bảo trì thiết bị"
+                              >
+                                <Wrench className="w-2.5 h-2.5" /> Sửa
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Active Job or Idle State */}
+                      {activeJob ? (
+                        <div className="space-y-1.5 my-1">
+                          <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-300">
+                            <span className="truncate">{activeRecipe?.name || 'Đang nấu'}</span>
+                            <span className="text-amber-400 shrink-0">{Math.round(activeJob.progress)}%</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 italic truncate">
+                            {activeStep?.name || activeJob.status}
+                          </div>
+                          {/* Progress Bar */}
+                          <div className="w-full bg-slate-700/80 h-2 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-300 animate-pulse"
+                              style={{ width: `${Math.min(100, Math.max(5, activeJob.progress))}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-2.5 text-center text-slate-500 text-[11px] font-medium flex items-center justify-center gap-1">
+                          <Clock className="w-3 h-3" /> Trống - Sẵn sàng
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Huge Hero Action Cook & Serve Button (Thumb Zone Friendly >= 56px) */}
           <div className="relative">
             <button
               onClick={handleHeroClick}
-              disabled={customers.length === 0}
-              className={`w-full min-h-[56px] py-4 md:py-7 rounded-2xl md:rounded-3xl font-black text-lg md:text-2xl uppercase tracking-wider transition-all duration-150 flex flex-col items-center justify-center gap-1 relative overflow-hidden shadow-2xl active:scale-95 ${
-                customers.length > 0
+              disabled={customers.length === 0 && readyJobs.length === 0}
+              className={`w-full min-h-[56px] py-4 md:py-6 rounded-2xl md:rounded-3xl font-black text-lg md:text-2xl uppercase tracking-wider transition-all duration-150 flex flex-col items-center justify-center gap-1 relative overflow-hidden shadow-2xl active:scale-95 ${
+                readyJobs.length > 0
+                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-slate-950 shadow-emerald-500/30 cursor-pointer ring-4 ring-emerald-400/40 animate-pulse'
+                  : customers.length > 0
                   ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-400 text-slate-950 shadow-orange-500/25 cursor-pointer ring-4 ring-amber-500/30'
                   : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
               } ${isCooking ? 'scale-95 brightness-125' : ''}`}
             >
               <div className="flex items-center gap-2 md:gap-3">
-                <span className="text-2xl md:text-3xl animate-wiggle">🍳</span>
-                <span>NẤU & PHỤC VỤ NGAY!</span>
+                <span className="text-2xl md:text-3xl animate-wiggle">
+                  {readyJobs.length > 0 ? '🍟' : '🍳'}
+                </span>
+                <span>
+                  {readyJobs.length > 0 ? `BƯNG MÓN CHO KHÁCH (${readyJobs.length} SẴN SÀNG)` : 'NẤU & PHỤC VỤ NGAY!'}
+                </span>
                 <span className="text-2xl md:text-3xl animate-bounce">💵</span>
               </div>
               <span className="text-[11px] md:text-xs font-bold tracking-normal opacity-90 text-slate-900">
-                {customers.length > 0
+                {readyJobs.length > 0
+                  ? `[ Món đã nấu chín trong bếp! Chạm để bưng phục vụ khách ]`
+                  : customers.length > 0
                   ? `[ Chạm để nấu món cho khách đầu tiên ]`
                   : `(Đang đợi khách hàng tiếp theo...)`}
               </span>

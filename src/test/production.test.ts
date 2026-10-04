@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { EQUIPMENT_CATALOG, STARTER_EQUIPMENT, STARTER_STATIONS, getEquipmentById } from '../data/equipment';
 import { RECIPES_CATALOG, getRecipeById } from '../data/recipes';
 import { StorageService } from '../services/storage';
+import { useGameStore } from '../store/gameStore';
 
 describe('Phase 2: Equipment & Data Catalogs', () => {
   it('verifies Basic Fryer exists with valid category and tier', () => {
@@ -161,3 +162,208 @@ describe('Phase 2: Save Migration (v1 to v2)', () => {
     expect(secondMigration.money).toBe(1000);
   });
 });
+
+describe('Phase 3: Production Engine & Cooking Workflow', () => {
+  it('creates production job for valid unlocked recipe and protects against duplicates', () => {
+    const store = useGameStore.getState();
+    // Reset state for test
+    useGameStore.setState({
+      productionJobs: [],
+      unlockedRecipeIds: ['recipe_french_fries'],
+      ingredients: store.ingredients.map(i => ({ ...i, stock: 100 }))
+    });
+
+    const res1 = useGameStore.getState().enqueueProductionJob('recipe_french_fries', 'order_cust_001');
+    expect(res1.success).toBe(true);
+    expect(res1.jobId).toBeDefined();
+
+    // Duplicate protection for same order
+    const resDuplicate = useGameStore.getState().enqueueProductionJob('recipe_french_fries', 'order_cust_001');
+    expect(resDuplicate.success).toBe(false);
+    expect(resDuplicate.reason).toContain('đang chế biến');
+
+    // Unknown recipe rejection
+    const resUnknown = useGameStore.getState().enqueueProductionJob('recipe_non_existent');
+    expect(resUnknown.success).toBe(false);
+
+    // Locked recipe rejection
+    useGameStore.setState({ unlockedRecipeIds: [] });
+    const resLocked = useGameStore.getState().enqueueProductionJob('recipe_french_fries');
+    expect(resLocked.success).toBe(false);
+    expect(resLocked.reason).toContain('chưa được mở khóa');
+  });
+
+  it('rejects job creation if ingredients or equipment are insufficient', () => {
+    // Missing ingredients
+    useGameStore.setState({
+      productionJobs: [],
+      unlockedRecipeIds: ['recipe_french_fries'],
+      autoRestock: false,
+      ingredients: useGameStore.getState().ingredients.map(i => 
+        i.id === 'potatoes' ? { ...i, stock: 0 } : { ...i, stock: 20 }
+      )
+    });
+
+    const resNoPotatoes = useGameStore.getState().enqueueProductionJob('recipe_french_fries');
+    expect(resNoPotatoes.success).toBe(false);
+    expect(resNoPotatoes.reason).toContain('Thiếu nguyên liệu');
+
+    // Broken equipment (condition 0)
+    useGameStore.setState({
+      ingredients: useGameStore.getState().ingredients.map(i => ({ ...i, stock: 50 })),
+      equipment: useGameStore.getState().equipment.map(e => 
+        e.id === 'fryer_basic' ? { ...e, condition: 0 } : e
+      )
+    });
+
+    const resBrokenFryer = useGameStore.getState().enqueueProductionJob('recipe_french_fries');
+    expect(resBrokenFryer.success).toBe(false);
+    expect(resBrokenFryer.reason).toContain('hỏng');
+  });
+
+  it('simulates complete French Fries workflow: Prep -> Fry -> Season -> Package -> READY', () => {
+    // Fresh setup
+    useGameStore.setState({
+      productionJobs: [],
+      unlockedRecipeIds: ['recipe_french_fries'],
+      stations: STARTER_STATIONS.map(s => ({ ...s, queue: [], activeJobId: undefined })),
+      equipment: STARTER_EQUIPMENT.map(e => ({ ...e, condition: 100 })),
+      ingredients: useGameStore.getState().ingredients.map(i => ({ ...i, stock: 50 }))
+    });
+
+    const initialPotatoes = useGameStore.getState().ingredients.find(i => i.id === 'potatoes')!.stock;
+    const initialOil = useGameStore.getState().ingredients.find(i => i.id === 'oil')!.stock;
+    const initialSalt = useGameStore.getState().ingredients.find(i => i.id === 'salt')!.stock;
+
+    // 1. Enqueue French Fries
+    const enqueueRes = useGameStore.getState().enqueueProductionJob('recipe_french_fries', 'cust_test_fries');
+    expect(enqueueRes.success).toBe(true);
+    const jobId = enqueueRes.jobId!;
+
+    let job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    expect(job.status).toBe('QUEUED');
+    expect(job.currentStepIndex).toBe(0);
+
+    // 2. Step 1: Prep Potato (duration: 3s)
+    // Run 1s
+    useGameStore.getState().processProduction(1);
+    job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    expect(job.status).toBe('PREPARING');
+    expect(job.progress).toBeGreaterThan(0);
+    // Potatoes consumed once
+    expect(useGameStore.getState().ingredients.find(i => i.id === 'potatoes')!.stock).toBe(initialPotatoes - 1);
+
+    // Finish remaining 2s of Prep
+    useGameStore.getState().processProduction(2.1);
+    job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    // Should have transitioned to Step 1 (Fryer)
+    expect(job.currentStepIndex).toBe(1);
+    expect(job.stationId).toBe('starter_fryer_station');
+
+    // 3. Step 2: Deep Fry (duration: 5s)
+    useGameStore.getState().processProduction(1);
+    job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    expect(job.status).toBe('COOKING');
+    // Oil consumed once
+    expect(useGameStore.getState().ingredients.find(i => i.id === 'oil')!.stock).toBe(initialOil - 1);
+
+    // Finish remaining 4.1s of Frying
+    useGameStore.getState().processProduction(4.1);
+    job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    // Should have transitioned to Step 2 (Packing - Season)
+    expect(job.currentStepIndex).toBe(2);
+    expect(job.stationId).toBe('starter_packing_station');
+
+    // Fryer condition should have decreased by 0.5
+    const fryer = useGameStore.getState().equipment.find(e => e.id === 'fryer_basic')!;
+    expect(fryer.condition).toBe(99.5);
+
+    // 4. Step 3: Season (duration: 1s)
+    useGameStore.getState().processProduction(1.1);
+    job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    expect(job.currentStepIndex).toBe(3); // Moved to Step 4 (Package)
+    // Salt consumed once
+    expect(useGameStore.getState().ingredients.find(i => i.id === 'salt')!.stock).toBe(initialSalt - 1);
+
+    // 5. Step 4: Package (duration: 1s)
+    useGameStore.getState().processProduction(1.1);
+    job = useGameStore.getState().productionJobs.find(j => j.id === jobId)!;
+    // Now READY!
+    expect(job.status).toBe('READY');
+    expect(job.completedAt).toBeDefined();
+    expect(job.qualityScore).toBeGreaterThanOrEqual(60);
+    expect(job.qualityScore).toBeLessThanOrEqual(100);
+
+    // Released from packing station
+    const packingStation = useGameStore.getState().stations.find(s => s.id === 'starter_packing_station')!;
+    expect(packingStation.activeJobId).toBeUndefined();
+  });
+
+  it('handles equipment wear and allows repairing equipment', () => {
+    useGameStore.setState({
+      money: 500,
+      equipment: useGameStore.getState().equipment.map(e => 
+        e.id === 'fryer_basic' ? { ...e, condition: 40 } : e
+      )
+    });
+
+    const fryerBefore = useGameStore.getState().equipment.find(e => e.id === 'fryer_basic')!;
+    expect(fryerBefore.condition).toBe(40);
+
+    const repaired = useGameStore.getState().repairEquipment('fryer_basic');
+    expect(repaired).toBe(true);
+
+    const fryerAfter = useGameStore.getState().equipment.find(e => e.id === 'fryer_basic')!;
+    expect(fryerAfter.condition).toBe(100);
+    expect(useGameStore.getState().money).toBeLessThan(500); // repair cost deducted
+  });
+
+  it('serves READY food to waiting customer and awards revenue', () => {
+    const testCustomerId = 'cust_waiting_001';
+    useGameStore.setState({
+      money: 100,
+      totalSalesCount: 0,
+      customers: [
+        {
+          id: testCustomerId,
+          name: 'Bảo',
+          archetype: 'student',
+          avatar: '🎒',
+          budget: 20,
+          patience: 30,
+          currentWait: 25,
+          favoriteFoodId: 'food_fries',
+          orderedFoodId: 'food_fries',
+          state: 'waiting',
+          satisfaction: 5,
+          quote: 'Thèm khoai chiên quá!'
+        }
+      ],
+      productionJobs: [
+        {
+          id: 'job_ready_fries',
+          orderId: testCustomerId,
+          recipeId: 'recipe_french_fries',
+          stationId: 'starter_packing_station',
+          status: 'READY',
+          currentStepIndex: 3,
+          progress: 100,
+          qualityScore: 95
+        }
+      ]
+    });
+
+    const served = useGameStore.getState().manualCookAndServe(testCustomerId);
+    expect(served).toBe(true);
+
+    // Customer removed
+    expect(useGameStore.getState().customers.length).toBe(0);
+    // Job marked as SERVED
+    const job = useGameStore.getState().productionJobs.find(j => j.id === 'job_ready_fries')!;
+    expect(job.status).toBe('SERVED');
+    // Money increased (base $7 + bonuses)
+    expect(useGameStore.getState().money).toBeGreaterThan(100);
+    expect(useGameStore.getState().totalSalesCount).toBe(1);
+  });
+});
+

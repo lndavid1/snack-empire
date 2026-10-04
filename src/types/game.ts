@@ -227,6 +227,7 @@ export interface ProductionJob {
   startedAt?: number;
   completedAt?: number;
   qualityScore?: number;    // 0 to 100
+  consumedStepIndices?: number[]; // indices of steps whose ingredients were consumed
 }
 
 export interface StoreUpgrade {

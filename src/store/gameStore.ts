@@ -33,6 +33,7 @@ import {
   POSSIBLE_EVENTS
 } from '../data/initialData';
 import { STARTER_EQUIPMENT, STARTER_STATIONS } from '../data/equipment';
+import { RECIPES_CATALOG, getRecipeById, getRecipeByFoodItemId } from '../data/recipes';
 import { sound } from '../services/sound';
 import { StorageService, SaveData } from '../services/storage';
 
@@ -61,6 +62,9 @@ const GEN_Z_QUOTES = [
   'Món này lên SnackTok kiểu gì cũng viral.',
   'Quán đỉnh, lần sau rủ cả hội bạn ghé tiếp.'
 ];
+
+const getSafeCenterX = () => (typeof window !== 'undefined' ? window.innerWidth / 2 : 200);
+const getSafeCenterY = () => (typeof window !== 'undefined' ? window.innerHeight / 2 : 200);
 
 export interface OfflineReport {
   secondsAway: number;
@@ -156,6 +160,10 @@ export interface GameState {
   // Phase 2 Station Actions
   assignEmployeeToStation: (employeeId: string, stationId: string) => boolean;
   unassignEmployeeFromStation: (stationId: string) => boolean;
+  // Phase 3 Production Engine Actions
+  enqueueProductionJob: (recipeId: string, orderId?: string) => { success: boolean; jobId?: string; reason?: string };
+  processProduction: (deltaSeconds?: number) => void;
+  repairEquipment: (equipmentId: string) => boolean;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -268,13 +276,120 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ offlineReport: null });
   },
 
-  // Manual Cook & Serve Button (Hero Action)
+  // Manual Cook & Serve Button (Hero Action & Service Pipeline)
   manualCookAndServe: (customerId?: string) => {
     const state = get();
     const customers = [...state.customers];
     if (customers.length === 0) return false;
 
-    // Pick customer
+    // 1. Check if there is an existing READY job that can be served
+    const readyJobIdx = state.productionJobs.findIndex(j => 
+      j.status === 'READY' && (!customerId || j.orderId === customerId)
+    );
+
+    if (readyJobIdx !== -1) {
+      const readyJob = state.productionJobs[readyJobIdx];
+      // Find matching customer
+      let targetIdx = -1;
+      if (readyJob.orderId) {
+        targetIdx = customers.findIndex(c => c.id === readyJob.orderId && c.state === 'waiting');
+      }
+      if (targetIdx === -1) {
+        // Fallback: match by ordered food or first waiting customer
+        targetIdx = customers.findIndex(c => {
+          if (c.state !== 'waiting') return false;
+          const matchRecipe = getRecipeByFoodItemId(c.orderedFoodId || '');
+          return matchRecipe && matchRecipe.id === readyJob.recipeId;
+        });
+      }
+      if (targetIdx === -1 && customers.some(c => c.state === 'waiting')) {
+        targetIdx = customers.findIndex(c => c.state === 'waiting');
+      }
+
+      if (targetIdx !== -1) {
+        const customer = customers[targetIdx];
+        const recipe = getRecipeById(readyJob.recipeId);
+        const earnedBase = recipe ? recipe.basePrice : 7;
+        const profitUpgrade = state.prestigeUpgrades.find(p => p.effectType === 'profit_boost');
+        const prestigeBonus = profitUpgrade ? 1 + profitUpgrade.level * profitUpgrade.effectMultiplier : 1;
+        const eventRevenueMult = state.activeEvent?.multiplier.revenue || 1;
+        const qualityBonus = readyJob.qualityScore ? Math.max(0.8, readyJob.qualityScore / 100) : 1;
+
+        const earned = Math.round(earnedBase * prestigeBonus * eventRevenueMult * qualityBonus);
+        const xpGained = Math.round(earned * 1.2);
+        const newMoney = state.money + earned;
+        const newXp = state.xp + xpGained;
+        const newSales = state.totalSalesCount + 1;
+        const newRevenue = state.totalRevenueEarned + earned;
+        const newCustomersServed = state.totalCustomersServed + 1;
+        const newLevel = Math.floor(Math.sqrt(newXp / 50)) + 1;
+
+        if (newLevel > state.level) {
+          sound.playLevelUp();
+          state.addFloatingText(`🎉 LEVEL UP ${newLevel}!`, getSafeCenterX(), getSafeCenterY() - 100, 'text-yellow-300 font-extrabold text-2xl');
+        } else {
+          sound.playCoin();
+        }
+
+        customers.splice(targetIdx, 1);
+        state.addFloatingText(`+ $${earned} 🍟`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
+
+        // Mark job as SERVED
+        const updatedJobs = state.productionJobs.map((j, idx) => 
+          idx === readyJobIdx ? { ...j, status: 'SERVED' as const } : j
+        );
+
+        // Update reviews
+        let updatedReviews = state.reviews;
+        if (Math.random() < 0.35) {
+          const newReview: Review = {
+            id: `rev_${Date.now()}`,
+            customerName: customer.name,
+            avatar: customer.avatar,
+            stars: 5,
+            comment: recipe ? `Món ${recipe.name} giòn rụm đỉnh nóc kịch trần! 🔥` : GEN_Z_QUOTES[0],
+            timeAgo: 'Vừa xong',
+            foodName: recipe ? recipe.name : 'Khoai Tây Chiên'
+          };
+          updatedReviews = [newReview, ...state.reviews.slice(0, 8)];
+        }
+
+        // Quests & achievements
+        const updatedQuests = state.quests.map(q => {
+          if (q.id === 'q_first_sale') return { ...q, progress: Math.min(q.target, q.progress + 1), completed: true };
+          if (q.id === 'q_sell_10') return { ...q, progress: Math.min(q.target, q.progress + 1), completed: q.progress + 1 >= q.target };
+          if (q.id === 'q_reach_100_customers') return { ...q, progress: Math.min(q.target, newCustomersServed), completed: newCustomersServed >= q.target };
+          return q;
+        });
+
+        const updatedAchievements = state.achievements.map(ach => {
+          if (ach.id === 'ach_first_dollar' && !ach.unlocked) return { ...ach, unlocked: true, unlockedAt: Date.now() };
+          if (ach.id === 'ach_1k_cash' && newMoney >= 1000 && !ach.unlocked) return { ...ach, unlocked: true, unlockedAt: Date.now() };
+          if (ach.id === 'ach_touch_grass' && newSales >= 500 && !ach.unlocked) return { ...ach, unlocked: true, unlockedAt: Date.now() };
+          return ach;
+        });
+
+        set({
+          money: newMoney,
+          xp: newXp,
+          level: newLevel,
+          totalSalesCount: newSales,
+          totalRevenueEarned: newRevenue,
+          totalCustomersServed: newCustomersServed,
+          customers,
+          productionJobs: updatedJobs,
+          reviews: updatedReviews,
+          quests: updatedQuests,
+          achievements: updatedAchievements,
+          reputation: Math.min(100, state.reputation + 0.3),
+          brandValue: state.brandValue + 2
+        });
+
+        return true;
+      }
+    }
+
+    // 2. Pick target customer for production or legacy serving
     const targetIdx = customerId 
       ? customers.findIndex(c => c.id === customerId && c.state === 'waiting')
       : customers.findIndex(c => c.state === 'waiting');
@@ -282,7 +397,30 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (targetIdx === -1) return false;
     const customer = customers[targetIdx];
 
-    // Find requested or favorite food
+    // 3. If customer's order is supported by production engine, handle via production pipeline
+    const matchingRecipe = getRecipeByFoodItemId(customer.orderedFoodId || '');
+    if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
+      const activeJob = state.productionJobs.find(j => 
+        j.orderId === customer.id && ['QUEUED', 'PREPARING', 'COOKING', 'ASSEMBLING', 'PACKING'].includes(j.status)
+      );
+      if (activeJob) {
+        state.addFloatingText('⏳ Món đang được nấu trong bếp...', getSafeCenterX(), getSafeCenterY() - 40, 'text-amber-300 font-bold');
+        return false;
+      }
+
+      const result = get().enqueueProductionJob(matchingRecipe.id, customer.id);
+      if (result.success) {
+        sound.playClick();
+        state.addFloatingText(`👨‍🍳 Bắt đầu làm ${matchingRecipe.name}!`, getSafeCenterX(), getSafeCenterY() - 40, 'text-indigo-400 font-bold');
+        return true;
+      } else {
+        sound.playError();
+        state.addFloatingText(`🚨 ${result.reason || 'Chưa thể chế biến!'}`, getSafeCenterX(), getSafeCenterY() - 40, 'text-rose-400 font-bold');
+        return false;
+      }
+    }
+
+    // 4. Legacy fallback for foods without production recipe
     const unlockedFoods = state.foods.filter(f => f.isUnlocked);
     if (unlockedFoods.length === 0) return false;
 
@@ -316,7 +454,6 @@ export const useGameStore = create<GameState>((set, get) => ({
             }
           }
         }
-        // recheck
         hasAllIngredients = foodToServe.ingredients.every(req => {
           const ing = currentIngredients.find(i => i.id === req.ingredientId);
           return ing && ing.stock >= req.amount;
@@ -326,7 +463,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     if (!hasAllIngredients) {
       sound.playError();
-      state.addFloatingText('🚨 Hết nguyên liệu!', window.innerWidth / 2, window.innerHeight / 2 - 40, 'text-red-400');
+      state.addFloatingText('🚨 Hết nguyên liệu!', getSafeCenterX(), getSafeCenterY() - 40, 'text-red-400');
       return false;
     }
 
@@ -338,14 +475,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
-    // Prestige profit multiplier
     const profitUpgrade = state.prestigeUpgrades.find(p => p.effectType === 'profit_boost');
     const prestigeBonus = profitUpgrade ? 1 + profitUpgrade.level * profitUpgrade.effectMultiplier : 1;
-
-    // Event multiplier
     const eventRevenueMult = state.activeEvent?.multiplier.revenue || 1;
 
-    // Calculate revenue
     const earned = Math.round(foodToServe.sellingPrice * prestigeBonus * eventRevenueMult);
     const xpGained = Math.round(earned * 1.2);
     const newMoney = state.money + earned;
@@ -354,22 +487,17 @@ export const useGameStore = create<GameState>((set, get) => ({
     const newRevenue = state.totalRevenueEarned + earned;
     const newCustomersServed = state.totalCustomersServed + 1;
 
-    // Level calculation (Level = floor(sqrt(XP / 50)) + 1)
     const newLevel = Math.floor(Math.sqrt(newXp / 50)) + 1;
     if (newLevel > state.level) {
       sound.playLevelUp();
-      state.addFloatingText(`🎉 LEVEL UP ${newLevel}!`, window.innerWidth / 2, window.innerHeight / 2 - 100, 'text-yellow-300 font-extrabold text-2xl');
+      state.addFloatingText(`🎉 LEVEL UP ${newLevel}!`, getSafeCenterX(), getSafeCenterY() - 100, 'text-yellow-300 font-extrabold text-2xl');
     } else {
       sound.playCoin();
     }
 
-    // Remove customer
     customers.splice(targetIdx, 1);
+    state.addFloatingText(`+ $${earned} 💵`, getSafeCenterX() + (Math.random() * 80 - 40), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
 
-    // Floating money effect
-    state.addFloatingText(`+ $${earned} 💵`, window.innerWidth / 2 + (Math.random() * 80 - 40), window.innerHeight / 2 - 20, 'text-emerald-400 font-bold');
-
-    // Occasional Review
     let updatedReviews = state.reviews;
     if (Math.random() < 0.25) {
       const newReview: Review = {
@@ -384,7 +512,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       updatedReviews = [newReview, ...state.reviews.slice(0, 8)];
     }
 
-    // Update Quests progress
     const updatedQuests = state.quests.map(q => {
       if (q.id === 'q_first_sale') return { ...q, progress: Math.min(q.target, q.progress + 1), completed: true };
       if (q.id === 'q_sell_10') return { ...q, progress: Math.min(q.target, q.progress + 1), completed: q.progress + 1 >= q.target };
@@ -392,7 +519,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       return q;
     });
 
-    // Update Achievements
     const updatedAchievements = state.achievements.map(ach => {
       if (ach.id === 'ach_first_dollar' && !ach.unlocked) return { ...ach, unlocked: true, unlockedAt: Date.now() };
       if (ach.id === 'ach_1k_cash' && newMoney >= 1000 && !ach.unlocked) return { ...ach, unlocked: true, unlockedAt: Date.now() };
@@ -423,6 +549,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   tickSimulation: () => {
     const state = get();
     const currentTier = STORE_TIERS.find(t => t.id === state.currentTierId) || STORE_TIERS[0];
+
+    // 0. Production Engine Tick (Process stations, cooking timers, equipment wear)
+    get().processProduction(1);
 
     // 1. Employee automation
     const hasCook = state.employees.some(e => e.role === 'cook' && e.hired);
@@ -503,6 +632,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
 
       updatedCustomers.push(newCustomer);
+
+      // Auto-enqueue production job if customer ordered a recipe supported by production engine
+      const matchingRecipe = getRecipeByFoodItemId(chosenFood.id);
+      if (matchingRecipe && state.unlockedRecipeIds.includes(matchingRecipe.id)) {
+        get().enqueueProductionJob(matchingRecipe.id, newCustomer.id);
+      }
     }
 
     // 3. Random Events Tick
@@ -1128,6 +1263,327 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     set({ stations: updatedStations, employees: updatedEmployees });
     return true;
+  },
+
+  // ----------------------------------------------------
+  // PHASE 3: PRODUCTION ENGINE ACTIONS
+  // ----------------------------------------------------
+
+  enqueueProductionJob: (recipeId: string, orderId?: string) => {
+    const state = get();
+    const recipe = getRecipeById(recipeId);
+    if (!recipe) {
+      return { success: false, reason: 'Không tìm thấy công thức món này' };
+    }
+    if (!state.unlockedRecipeIds.includes(recipeId)) {
+      return { success: false, reason: 'Công thức chưa được mở khóa' };
+    }
+
+    // Duplicate active job protection for the same order
+    if (orderId) {
+      const existingActiveJob = state.productionJobs.find(j => 
+        j.orderId === orderId && 
+        ['QUEUED', 'PREPARING', 'COOKING', 'ASSEMBLING', 'PACKING', 'READY'].includes(j.status)
+      );
+      if (existingActiveJob) {
+        return { success: false, jobId: existingActiveJob.id, reason: 'Đơn hàng này đã có món đang chế biến' };
+      }
+    }
+
+    // Verify required equipment
+    for (const reqEq of recipe.requiredEquipment) {
+      const hasEquip = state.equipment.some(e => 
+        e.category === reqEq.equipmentCategory && 
+        e.tier >= (reqEq.minimumTier || 1) && 
+        e.condition > 0
+      );
+      if (!hasEquip) {
+        return { 
+          success: false, 
+          reason: `Thiếu thiết bị ${reqEq.equipmentCategory} (Tier ${reqEq.minimumTier || 1}) hoặc thiết bị đã hỏng` 
+        };
+      }
+    }
+
+    // Verify initial station exists
+    const firstStep = recipe.steps[0];
+    const targetStation = state.stations.find(s => s.stationType === firstStep.stationType && s.isOperational);
+    if (!targetStation) {
+      return { success: false, reason: `Không có trạm ${firstStep.stationType} nào đang hoạt động` };
+    }
+
+    // Verify station equipment condition
+    const stationEquip = state.equipment.find(e => e.id === targetStation.equipmentId);
+    if (!stationEquip || stationEquip.condition <= 0) {
+      return { success: false, reason: `Thiết bị tại trạm ${targetStation.name} bị hỏng hoặc thiếu` };
+    }
+
+    // Check station queue capacity
+    if (targetStation.queue.length >= targetStation.capacity * 4) {
+      return { success: false, reason: `Hàng đợi trạm ${targetStation.name} đã đầy` };
+    }
+
+    // Verify ingredient availability for all recipe ingredients
+    const currentIngredients = [...state.ingredients];
+    let enoughIngredients = true;
+    let missingName = '';
+
+    for (const ingReq of recipe.ingredients) {
+      const ing = currentIngredients.find(i => i.id === ingReq.ingredientId);
+      if (!ing || ing.stock < ingReq.quantity) {
+        if (state.autoRestock && ing) {
+          const supplier = state.suppliers.find(s => s.id === state.selectedSupplierId) || state.suppliers[0];
+          const batchCost = ing.basePrice * ing.minBatch * supplier.discountRate;
+          if (state.money >= batchCost) {
+            set(s => ({ money: s.money - batchCost }));
+            ing.stock += ing.minBatch;
+            continue;
+          }
+        }
+        enoughIngredients = false;
+        missingName = ing ? ing.name : ingReq.ingredientId;
+        break;
+      }
+    }
+
+    if (!enoughIngredients) {
+      return { success: false, reason: `Thiếu nguyên liệu: ${missingName}` };
+    }
+
+    // Create new production job
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const newJob: ProductionJob = {
+      id: jobId,
+      orderId,
+      recipeId,
+      stationId: targetStation.id,
+      employeeId: targetStation.assignedEmployeeId,
+      status: 'QUEUED',
+      currentStepIndex: 0,
+      progress: 0,
+      startedAt: Date.now(),
+      qualityScore: 100,
+      consumedStepIndices: []
+    };
+
+    const updatedStations = state.stations.map(s => {
+      if (s.id === targetStation.id) {
+        const newQueue = [...s.queue, jobId];
+        return {
+          ...s,
+          queue: newQueue,
+          activeJobId: s.activeJobId || jobId
+        };
+      }
+      return s;
+    });
+
+    set({
+      productionJobs: [...state.productionJobs, newJob],
+      stations: updatedStations,
+      ingredients: currentIngredients
+    });
+
+    return { success: true, jobId };
+  },
+
+  repairEquipment: (equipmentId: string) => {
+    const state = get();
+    const eq = state.equipment.find(e => e.id === equipmentId);
+    if (!eq || eq.condition >= 100) return false;
+
+    const repairCost = Math.max(5, Math.round((100 - eq.condition) * 0.5));
+    if (state.money < repairCost) {
+      sound.playError();
+      state.addFloatingText('💸 Không đủ tiền sửa chữa!', getSafeCenterX(), getSafeCenterY() - 40, 'text-red-400 font-bold');
+      return false;
+    }
+
+    sound.playClick();
+    set(s => ({
+      money: s.money - repairCost,
+      equipment: s.equipment.map(e => e.id === equipmentId ? { ...e, condition: 100 } : e)
+    }));
+    state.addFloatingText(`🔧 Đã sửa chữa ${eq.name}! (-$${repairCost})`, getSafeCenterX(), getSafeCenterY() - 20, 'text-emerald-400 font-bold');
+    return true;
+  },
+
+  processProduction: (deltaSeconds = 1) => {
+    const state = get();
+    if (state.stations.length === 0 || state.productionJobs.length === 0) return;
+
+    const updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
+    const updatedJobs = state.productionJobs.map(j => ({ ...j, consumedStepIndices: [...(j.consumedStepIndices || [])] }));
+    const updatedIngredients = state.ingredients.map(i => ({ ...i }));
+    const updatedEquipment = state.equipment.map(e => ({ ...e }));
+
+    // Track jobs processed in this tick to prevent a job from teleporting through multiple stations in a single tick
+    const processedJobIdsInTick = new Set<string>();
+
+    for (let stationIdx = 0; stationIdx < updatedStations.length; stationIdx++) {
+      const station = updatedStations[stationIdx];
+      if (!station.isOperational) continue;
+
+      const equip = updatedEquipment.find(e => e.id === station.equipmentId);
+      if (!equip || equip.condition <= 0) continue; // Broken equipment halts station
+
+      // Ensure active job is set from queue if none currently active
+      if (!station.activeJobId && station.queue.length > 0) {
+        station.activeJobId = station.queue[0];
+      }
+
+      if (!station.activeJobId) continue;
+
+      const jobIdx = updatedJobs.findIndex(j => j.id === station.activeJobId);
+      if (jobIdx === -1) {
+        station.activeJobId = undefined;
+        station.queue = station.queue.filter(id => id !== station.activeJobId);
+        continue;
+      }
+
+      const job = updatedJobs[jobIdx];
+
+      // If job has already been processed in another station during this tick, wait for next tick
+      if (processedJobIdsInTick.has(job.id)) {
+        continue;
+      }
+      processedJobIdsInTick.add(job.id);
+
+      // If job is already terminal at this station, clear and proceed
+      if (['READY', 'SERVED', 'FAILED', 'CANCELLED'].includes(job.status)) {
+        station.activeJobId = undefined;
+        station.queue = station.queue.filter(id => id !== job.id);
+        if (station.queue.length > 0) {
+          station.activeJobId = station.queue[0];
+        }
+        continue;
+      }
+
+      const recipe = getRecipeById(job.recipeId);
+      if (!recipe) {
+        job.status = 'FAILED';
+        station.activeJobId = undefined;
+        station.queue = station.queue.filter(id => id !== job.id);
+        continue;
+      }
+
+      const step = recipe.steps[job.currentStepIndex];
+      if (!step) {
+        job.status = 'READY';
+        job.completedAt = Date.now();
+        station.activeJobId = undefined;
+        station.queue = station.queue.filter(id => id !== job.id);
+        continue;
+      }
+
+      // Update job status according to stationType
+      let derivedStatus: ProductionJob['status'] = 'COOKING';
+      if (step.stationType === 'prep') derivedStatus = 'PREPARING';
+      else if (step.stationType === 'fryer') derivedStatus = 'COOKING';
+      else if (step.stationType === 'grill' || step.stationType === 'oven') derivedStatus = 'COOKING';
+      else if (step.stationType === 'assembly') derivedStatus = 'ASSEMBLING';
+      else if (step.stationType === 'packing') derivedStatus = 'PACKING';
+      job.status = derivedStatus;
+
+      // Consume step ingredients if not yet consumed for this step
+      if (!job.consumedStepIndices!.includes(job.currentStepIndex)) {
+        if (step.ingredientConsumption && step.ingredientConsumption.length > 0) {
+          let canConsume = true;
+          for (const cons of step.ingredientConsumption) {
+            const ing = updatedIngredients.find(i => i.id === cons.ingredientId);
+            if (!ing || ing.stock < cons.quantity) {
+              canConsume = false;
+              break;
+            }
+          }
+          if (canConsume) {
+            for (const cons of step.ingredientConsumption) {
+              const ing = updatedIngredients.find(i => i.id === cons.ingredientId);
+              if (ing) ing.stock -= cons.quantity;
+            }
+            job.consumedStepIndices!.push(job.currentStepIndex);
+          } else {
+            // Cannot start progress until ingredients are present
+            continue;
+          }
+        } else {
+          job.consumedStepIndices!.push(job.currentStepIndex);
+        }
+      }
+
+      // Calculate speed and duration multipliers
+      let conditionFactor = 1.0;
+      if (equip.condition >= 80) conditionFactor = 1.0;
+      else if (equip.condition >= 50) conditionFactor = 0.85;
+      else if (equip.condition >= 20) conditionFactor = 0.65;
+      else if (equip.condition > 0) conditionFactor = 0.4;
+      else conditionFactor = 0.0;
+
+      let employeeSpeedMult = 1.0;
+      let employeeQuality = 10;
+      if (station.assignedEmployeeId) {
+        const emp = state.employees.find(e => e.id === station.assignedEmployeeId && e.hired);
+        if (emp) {
+          employeeSpeedMult = 1 + (emp.speed / 100);
+          employeeQuality = emp.quality;
+        }
+      }
+
+      const totalSpeedFactor = Math.max(0.2, equip.speedMultiplier * conditionFactor * employeeSpeedMult);
+      const effectiveDuration = Math.max(0.5, step.durationSeconds / totalSpeedFactor);
+      const progressDelta = (deltaSeconds / effectiveDuration) * 100;
+      job.progress = Math.min(100, job.progress + progressDelta);
+
+      // Check step completion
+      if (job.progress >= 100) {
+        // Wear equipment slightly per completed operation
+        equip.condition = Math.max(0, equip.condition - 0.5);
+
+        // Check if final step of the recipe
+        if (job.currentStepIndex >= recipe.steps.length - 1) {
+          job.status = 'READY';
+          job.completedAt = Date.now();
+          job.qualityScore = Math.min(100, Math.max(60, Math.round(75 + employeeQuality * 1.2 + (equip.qualityMultiplier - 1) * 20)));
+
+          // Remove from current station queue
+          station.activeJobId = undefined;
+          station.queue = station.queue.filter(id => id !== job.id);
+          if (station.queue.length > 0) {
+            station.activeJobId = station.queue[0];
+          }
+        } else {
+          // Transition to next step
+          job.currentStepIndex += 1;
+          job.progress = 0;
+
+          // Remove from current station
+          station.activeJobId = undefined;
+          station.queue = station.queue.filter(id => id !== job.id);
+          if (station.queue.length > 0) {
+            station.activeJobId = station.queue[0];
+          }
+
+          // Route to next station required by next step
+          const nextStep = recipe.steps[job.currentStepIndex];
+          const nextStation = updatedStations.find(s => s.stationType === nextStep.stationType && s.isOperational);
+          if (nextStation) {
+            job.stationId = nextStation.id;
+            job.employeeId = nextStation.assignedEmployeeId;
+            nextStation.queue.push(job.id);
+            if (!nextStation.activeJobId) {
+              nextStation.activeJobId = job.id;
+            }
+          }
+        }
+      }
+    }
+
+    set({
+      stations: updatedStations,
+      productionJobs: updatedJobs,
+      ingredients: updatedIngredients,
+      equipment: updatedEquipment
+    });
   }
 }));
 
