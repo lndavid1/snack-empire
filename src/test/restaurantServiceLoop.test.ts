@@ -4,6 +4,9 @@ import { EmployeeWorkflowService } from '../services/employeeWorkflow';
 import { DINING_TABLES_LAYOUT } from '../3d/config/restaurantLayout';
 import type { Employee, Customer, Order, ProductionJob } from '../types/game';
 
+import { INITIAL_EMPLOYEES } from '../data/initialData';
+import { STARTER_STATIONS } from '../data/equipment';
+
 describe('Snack Empire: Automated Restaurant Service Loop & Waitstaff Tests', () => {
   beforeEach(() => {
     useGameStore.setState({
@@ -12,7 +15,9 @@ describe('Snack Empire: Automated Restaurant Service Loop & Waitstaff Tests', ()
       totalSalesCount: 0,
       totalRevenueEarned: 0,
       totalTipsEarned: 0,
-      unlockedRecipeIds: ['recipe_french_fries', 'recipe_burger'],
+      unlockedRecipeIds: ['recipe_french_fries', 'recipe_burger', 'recipe_soda'],
+      employees: INITIAL_EMPLOYEES.map(e => ({ ...e })),
+      stations: STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
       customers: [],
       orders: [],
       productionJobs: [],
@@ -329,5 +334,79 @@ describe('Snack Empire: Automated Restaurant Service Loop & Waitstaff Tests', ()
     expect(autoOrderedCustomer.tableId).toBeDefined();
     expect(autoOrderedCustomer.seatId).toBeDefined();
     expect(state.productionJobs.some(j => j.orderId === 'cust_solo')).toBe(true);
+  });
+
+  it('kitchen automatically receives order, cook Bob cooks across stations to READY, and server Hoa delivers it', () => {
+    const store = useGameStore.getState();
+    const bob = store.employees.find(e => e.id === 'emp_cook_bob')!;
+    const linh = store.employees.find(e => e.id === 'emp_cashier_linh')!;
+    const hoa = store.employees.find(e => e.id === 'emp_server_hoa')!;
+
+    expect(bob.hired).toBe(true);
+    expect(linh.hired).toBe(true);
+    expect(hoa.hired).toBe(true);
+
+    const customer: Customer = {
+      id: 'cust_auto_loop',
+      name: 'Khách Đói Bụng',
+      archetype: 'student',
+      avatar: '🎒',
+      budget: 50,
+      patience: 35,
+      maxPatience: 35,
+      waitingTime: 0,
+      mood: 'DELIGHTED',
+      favoriteFoodId: 'food_fries',
+      orderedFoodId: 'food_fries',
+      orderId: 'ord_auto_loop',
+      state: 'waiting',
+      isOrdered: false,
+      satisfaction: 5,
+      quote: 'Đói bụng quá!'
+    };
+
+    useGameStore.setState({
+      customers: [customer],
+      orders: [{
+        id: 'ord_auto_loop',
+        customerId: 'cust_auto_loop',
+        foodId: 'food_fries',
+        quantity: 1,
+        createdAt: Date.now(),
+        waitingTime: 0,
+        status: 'PENDING',
+        basePrice: 7
+      }],
+      productionJobs: []
+    });
+
+    // Tick 1: Linh takes order, creates production job bill, assigns seat
+    useGameStore.getState().tickSimulation();
+
+    let state = useGameStore.getState();
+    const custAfterOrder = state.customers.find(c => c.id === 'cust_auto_loop')!;
+    expect(custAfterOrder.isOrdered).toBe(true);
+    expect(state.productionJobs.length).toBe(1);
+
+    const job = state.productionJobs[0];
+    // Check that target station queue immediately holds the job
+    const prepStation = state.stations.find(s => s.stationType === 'prep')!;
+    expect(prepStation.queue).toContain(job.id);
+
+    // Run simulation ticks until food is cooked and served (approx 10-15 seconds for French Fries)
+    for (let tick = 0; tick < 18; tick++) {
+      useGameStore.getState().tickSimulation();
+      const currentJob = useGameStore.getState().productionJobs.find(j => j.id === job.id);
+      if (currentJob?.status === 'SERVED') {
+        break;
+      }
+    }
+
+    state = useGameStore.getState();
+    const servedCust = state.customers.find(c => c.id === 'cust_auto_loop')!;
+    // Customer received food, eating or leaving
+    expect(['eating', 'leaving'].includes(servedCust.state)).toBe(true);
+    // Revenue was earned
+    expect(state.totalRevenueEarned).toBeGreaterThan(0);
   });
 });

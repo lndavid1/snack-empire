@@ -739,11 +739,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   // Main Simulation Loop (Called every second)
   tickSimulation: () => {
-    // 0. Production Engine Tick (Process stations, cooking timers, equipment wear)
-    get().processProduction(1);
-
-    // 1. Employee Workflows & Automation Tick (Task prioritization, stamina update, service execution)
+    // 0. Employee Workflows & Automation Tick (Task prioritization, cashier orders, server delivery)
     get().processEmployees(1);
+
+    // 1. Production Engine Tick (Process stations, cooking timers, equipment wear)
+    get().processProduction(1);
 
     const state = get();
     const currentTier = STORE_TIERS.find(t => t.id === state.currentTierId) || STORE_TIERS[0];
@@ -979,10 +979,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       activeEvent: currentEvent
     });
 
-    // 6. Cashier auto-order fallback for solo player without cashier staff
-    const hasHiredCashier = state.employees.some(e => e.hired && EmployeeWorkflowService.isCashier(e));
-    if (!hasHiredCashier) {
-      const pendingCustomer = activeCustomers.find(c => c.state === 'waiting' && !c.isOrdered && (c.waitingTime || 0) >= 2);
+    // 6. Cashier auto-order fallback for solo player or when cashier is resting
+    const hasActiveCashier = state.employees.some(e => e.hired && EmployeeWorkflowService.isCashier(e) && e.workState !== 'RESTING');
+    if (!hasActiveCashier) {
+      const pendingCustomer = activeCustomers.find(c => c.state === 'waiting' && !c.isOrdered && (c.waitingTime || 0) >= 1);
       if (pendingCustomer) {
         get().takeCustomerOrder(pendingCustomer.id);
       }
@@ -1471,22 +1471,18 @@ export const useGameStore = create<GameState>((set, get) => ({
       }),
       employees: state.employees.map(e => {
         const savedEmp = saved.hiredEmployees[e.id];
-        if (savedEmp) {
-          const isStarterStaff = ['emp_cook_bob', 'emp_cashier_linh', 'emp_server_hoa'].includes(e.id);
-          const hasAnyHired = Object.values(saved.hiredEmployees).some(h => h.hired);
-          const isHired = hasAnyHired ? savedEmp.hired : (isStarterStaff ? true : savedEmp.hired);
-          return {
-            ...e,
-            hired: isHired,
-            level: savedEmp.level,
-            mood: savedEmp.mood,
-            assignedStationId: savedEmp.assignedStationId || e.assignedStationId,
-            stamina: (savedEmp as any).stamina !== undefined ? (savedEmp as any).stamina : (e.stamina ?? 100),
-            workState: 'IDLE' as const,
-            currentLocation: (savedEmp.assignedStationId ? 'STATION' : (e.role === 'cook' ? 'STATION' : 'SERVICE_AREA')) as any
-          };
-        }
-        return e;
+        const isStarterStaff = ['emp_cook_bob', 'emp_cashier_linh', 'emp_server_hoa'].includes(e.id);
+        const isHired = isStarterStaff ? true : (savedEmp ? savedEmp.hired : false);
+        return {
+          ...e,
+          hired: isHired,
+          level: savedEmp ? savedEmp.level : e.level,
+          mood: savedEmp ? savedEmp.mood : e.mood,
+          assignedStationId: savedEmp ? (savedEmp.assignedStationId || e.assignedStationId) : e.assignedStationId,
+          stamina: savedEmp && (savedEmp as any).stamina !== undefined ? (savedEmp as any).stamina : (e.stamina ?? 100),
+          workState: 'IDLE' as const,
+          currentLocation: (savedEmp?.assignedStationId ? 'STATION' : (e.role === 'cook' ? 'STATION' : 'SERVICE_AREA')) as any
+        };
       }),
       upgrades: state.upgrades.map(u => ({
         ...u,
@@ -1507,9 +1503,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       equipment: saved.equipment && saved.equipment.length > 0
         ? saved.equipment
         : STARTER_EQUIPMENT.map(e => ({ ...e })),
-      stations: saved.stations && saved.stations.length > 0
-        ? saved.stations
-        : STARTER_STATIONS.map(s => ({ ...s, queue: [] })),
+      stations: (saved.stations && saved.stations.length > 0 ? saved.stations : STARTER_STATIONS).map(s => ({
+        ...s,
+        queue: Array.isArray(s.queue) ? s.queue : [],
+        activeJobId: Array.isArray(s.queue) && s.queue.length > 0 ? s.queue[0] : undefined
+      })),
       productionJobs: [],
       unlockedRecipeIds: Array.from(new Set([
         ...(saved.unlockedRecipeIds || []),
@@ -1759,6 +1757,26 @@ export const useGameStore = create<GameState>((set, get) => ({
     const updatedEmployees = state.employees.map(e => ({ ...e }));
 
     // Track jobs processed in this tick to prevent a job from teleporting through multiple stations in a single tick
+    // Self-healing: ensure any active production jobs are present in their target station's queue
+    for (const job of updatedJobs) {
+      if (['QUEUED', 'PREPARING', 'COOKING', 'ASSEMBLING', 'PACKING'].includes(job.status)) {
+        const recipe = getRecipeById(job.recipeId);
+        const step = recipe?.steps[job.currentStepIndex];
+        if (step) {
+          const targetStation = updatedStations.find(s => s.stationType === step.stationType && s.isOperational);
+          if (targetStation) {
+            job.stationId = targetStation.id;
+            if (!targetStation.queue.includes(job.id)) {
+              targetStation.queue.push(job.id);
+            }
+            if (!targetStation.activeJobId) {
+              targetStation.activeJobId = targetStation.queue[0];
+            }
+          }
+        }
+      }
+    }
+    // Track jobs processed in this tick to prevent a job from teleporting through multiple stations in a single tick
     const processedJobIdsInTick = new Set<string>();
 
     for (let stationIdx = 0; stationIdx < updatedStations.length; stationIdx++) {
@@ -1866,7 +1884,20 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       let employeeSpeedMult = 1.0;
       let employeeQuality = 10;
-      const assignedEmpId = station.assignedEmployeeId || job.employeeId;
+      let assignedEmpId = station.assignedEmployeeId || job.employeeId;
+      if (!assignedEmpId) {
+        // Auto-assign any available hired cook/barista to work this station
+        const availableWorker = updatedEmployees.find(e => 
+          e.hired && 
+          EmployeeWorkflowService.canEmployeeWorkAtStation(e, station) && 
+          (e.workState === 'IDLE' || e.workState === 'SEEKING_JOB' || !e.workState)
+        );
+        if (availableWorker) {
+          assignedEmpId = availableWorker.id;
+          job.employeeId = availableWorker.id;
+          station.assignedEmployeeId = availableWorker.id;
+        }
+      }
       if (assignedEmpId) {
         const emp = updatedEmployees.find(e => e.id === assignedEmpId && e.hired);
         if (emp) {
@@ -2010,7 +2041,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     const updatedEmployees = state.employees.map(e => ({ ...e }));
     let updatedJobs = state.productionJobs.map(j => ({ ...j }));
-    const updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
+    let updatedStations = state.stations.map(s => ({ ...s, queue: [...s.queue] }));
     let updatedOrders = state.orders.map(o => ({ ...o }));
     let updatedLogs = [...state.employeeLogs];
 
@@ -2090,6 +2121,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           updatedJobs = freshState.productionJobs.map(j => ({ ...j }));
           updatedOrders = freshState.orders.map(o => ({ ...o }));
           updatedLogs = freshState.employeeLogs;
+          updatedStations = freshState.stations.map(s => ({ ...s, queue: [...s.queue] }));
           continue;
         }
       }
@@ -2142,6 +2174,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             const freshState = get();
             updatedJobs = freshState.productionJobs.map(j => ({ ...j }));
             updatedOrders = freshState.orders.map(o => ({ ...o }));
+            updatedStations = freshState.stations.map(s => ({ ...s, queue: [...s.queue] }));
 
             emp.stamina = EmployeeWorkflowService.updateStamina(emp.stamina ?? 100, true, deltaSeconds, emp.archetype);
             emp.workState = 'IDLE';
@@ -2197,6 +2230,17 @@ export const useGameStore = create<GameState>((set, get) => ({
                 emp.workState = 'WORKING';
                 emp.currentLocation = 'STATION';
                 emp.currentProductionJobId = highest.job.id;
+
+                const recipe = getRecipeById(highest.job.recipeId);
+                const newLog: EmployeeLogEvent = {
+                  id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                  timestamp: Date.now(),
+                  employeeId: emp.id,
+                  employeeName: emp.name,
+                  message: `${emp.name} bắt đầu nấu ${recipe?.name || 'món ăn'} tại ${st.name}! 🍳`,
+                  type: 'work'
+                };
+                updatedLogs = [newLog, ...updatedLogs.slice(0, 19)];
                 break;
               }
             }
