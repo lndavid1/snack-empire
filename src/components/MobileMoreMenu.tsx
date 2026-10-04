@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { TabId } from './Navigation';
 import { useGameStore } from '../store/gameStore';
 import { 
+  Boxes,
   Users, 
   Share2, 
   Trophy, 
@@ -58,6 +59,14 @@ export const MobileMoreMenu: React.FC<MobileMoreMenuProps> = ({
   };
 
   const menuItems = [
+    {
+      id: 'restaurant3d' as TabId,
+      label: 'Mô Phỏng 3D Nhà Hàng',
+      desc: 'Quan sát nhân viên, bếp và khách hàng 3D',
+      icon: Boxes,
+      emoji: '🏢',
+      badge: 'Mới',
+    },
     {
       id: 'employees' as TabId,
       label: 'Nhân Sự & Tuyển Dụng',

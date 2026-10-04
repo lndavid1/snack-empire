@@ -7,11 +7,13 @@ import {
   Users, 
   Share2, 
   Trophy, 
-  Sparkles 
+  Sparkles,
+  Boxes
 } from 'lucide-react';
 
 export type TabId = 
   | 'dashboard' 
+  | 'restaurant3d'
   | 'menu' 
   | 'inventory' 
   | 'stores' 
@@ -33,6 +35,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 }) => {
   const tabs = [
     { id: 'dashboard', label: 'Quán Ẩm Thực', icon: Home, emoji: '🏠' },
+    { id: 'restaurant3d', label: 'Mô Phỏng 3D', icon: Boxes, emoji: '🏢' },
     { id: 'menu', label: 'Menu Món Ăn', icon: UtensilsCrossed, emoji: '🍔' },
     { id: 'inventory', label: 'Kho Nguyên Liệu', icon: Package, emoji: '📦' },
     { id: 'stores', label: 'Nâng Cấp Quán', icon: Store, emoji: '🏪' },

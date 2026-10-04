@@ -15,7 +15,11 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-export const DashboardView: React.FC = () => {
+interface DashboardViewProps {
+  onOpen3D?: () => void;
+}
+
+export const DashboardView: React.FC<DashboardViewProps> = ({ onOpen3D }) => {
   const {
     currentTierId,
     customers,
@@ -89,7 +93,7 @@ export const DashboardView: React.FC = () => {
             </div>
 
             <div>
-              <div className="flex items-center justify-center md:justify-start gap-1.5 mb-1">
+              <div className="flex items-center justify-center md:justify-start gap-1.5 mb-1 flex-wrap">
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-extrabold text-[10px] md:text-xs border border-amber-500/30">
                   TIER {currentTier.tierNumber} / 10
                 </span>
@@ -97,6 +101,15 @@ export const DashboardView: React.FC = () => {
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold text-[10px] md:text-xs border border-emerald-500/30 animate-pulse">
                     <Zap className="w-3 h-3" /> TỰ ĐỘNG
                   </span>
+                )}
+                {onOpen3D && (
+                  <button
+                    onClick={onOpen3D}
+                    className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-extrabold text-[10px] md:text-xs border border-indigo-500/40 transition-transform active:scale-95 cursor-pointer shadow-sm"
+                    title="Chuyển sang quan sát mô phỏng 3D"
+                  >
+                    <span>🏢</span> <span>Mở 3D</span>
+                  </button>
                 )}
               </div>
               <h2 className="text-xl md:text-3xl font-black text-slate-100 tracking-tight m-0">

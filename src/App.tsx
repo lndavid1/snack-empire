@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { useGameStore } from './store/gameStore';
 import { Header } from './components/Header';
 import { Navigation, TabId } from './components/Navigation';
@@ -18,6 +18,10 @@ import { EmployeesView } from './components/views/EmployeesView';
 import { SnackTokMarketingView } from './components/views/SnackTokMarketingView';
 import { QuestsAchievementsView } from './components/views/QuestsAchievementsView';
 import { PrestigeResearchView } from './components/views/PrestigeResearchView';
+
+const Restaurant3DView = lazy(() => 
+  import('./3d/Restaurant3DView').then(m => ({ default: m.Restaurant3DView }))
+);
 
 export function App() {
   const { initGame, tickSimulation, quests } = useGameStore();
@@ -60,7 +64,17 @@ export function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0">
-          {activeTab === 'dashboard' && <DashboardView />}
+          {activeTab === 'dashboard' && <DashboardView onOpen3D={() => setActiveTab('restaurant3d')} />}
+          {activeTab === 'restaurant3d' && (
+            <Suspense fallback={
+              <div className="flex flex-col items-center justify-center min-h-[500px] bg-slate-950 rounded-3xl border border-slate-800 text-slate-400 gap-3">
+                <div className="w-8 h-8 border-4 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-bold">Đang tải không gian 3D...</span>
+              </div>
+            }>
+              <Restaurant3DView onBackTo2D={() => setActiveTab('dashboard')} />
+            </Suspense>
+          )}
           {activeTab === 'menu' && <MenuKitchenView />}
           {activeTab === 'inventory' && <InventorySuppliersView />}
           {activeTab === 'stores' && <StoresExpansionView />}
